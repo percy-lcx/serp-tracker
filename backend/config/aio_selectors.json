@@ -1,0 +1,28 @@
+{
+  "aio_container_selectors": [
+    "[data-attrid='wa:/description'] .aiO-section",
+    "div[id*='aio'] div.g-blk",
+    "div.M8OgIe .XbbXmb",
+    "div[data-md] div[data-hveid] .aiO",
+    "div.wDYxhc[data-md]",
+    "div[jsname='N760bc']",
+    "#m-x-content div.wDYxhc",
+    "div.OZ5bRd",
+    "div[data-attrid='SGAnswer']"
+  ],
+  "aio_citation_selectors": [
+    "a[data-cite-link]",
+    ".aiO-section a[href]",
+    ".XbbXmb a[href]",
+    "div.wDYxhc a[data-ved]",
+    "div.OZ5bRd a[href]",
+    "a.KEVENd",
+    "a[jsname='UWckNb']"
+  ],
+  "aio_content_selectors": [
+    ".aiO-section",
+    ".XbbXmb",
+    "div.wDYxhc[data-md] span",
+    "div.OZ5bRd"
+  ]
+}
