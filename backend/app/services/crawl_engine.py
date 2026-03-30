@@ -31,9 +31,9 @@ class RunManager:
     _instance = None
 
     def __init__(self):
-        self.active_run_id: str | None = None
-        self.abort_requested: bool = False
-        self.ws_connections: dict[str, list] = {}  # run_id -> [websocket]
+        self.active_run_id = None  # type: Optional[str]
+        self.abort_requested = False
+        self.ws_connections = {}  # run_id -> [websocket]
 
     @classmethod
     def get_instance(cls) -> "RunManager":

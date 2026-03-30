@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
+from typing import Optional, Tuple, List
+
 from playwright.async_api import Page
 
 from ..config import AIO_SELECTORS_PATH
@@ -34,7 +36,7 @@ def normalize_url(url: str) -> str:
     return f"{host}{path}".lower()
 
 
-async def detect_aio(page: Page) -> dict | None:
+async def detect_aio(page: Page) -> Optional[dict]:
     """Detect and extract AI Overview content and citations from a SERP page.
 
     Returns dict with keys: content, citations, element (for screenshot) or None if no AIO.
@@ -110,7 +112,7 @@ async def detect_aio(page: Page) -> dict | None:
     }
 
 
-def match_citations_to_target(citations: list[dict], target_url: str) -> tuple[bool, int | None]:
+def match_citations_to_target(citations: List[dict], target_url: str) -> Tuple[bool, Optional[int]]:
     """Check if target URL appears in citations. Returns (is_cited, position)."""
     target_normalized = normalize_url(target_url)
     for i, citation in enumerate(citations):
