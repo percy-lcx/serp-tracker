@@ -66,7 +66,8 @@ async def list_runs(
 
 @router.get("/api/runs/{run_id}", response_model=RunDetailResponse)
 async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
-    run = await db.get(TrackingRun, run_id)
+    stmt_run = select(TrackingRun).options(selectinload(TrackingRun.results)).where(TrackingRun.id == run_id)
+    run = (await db.execute(stmt_run)).scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
