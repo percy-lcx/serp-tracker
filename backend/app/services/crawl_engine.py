@@ -287,103 +287,129 @@ async def execute_run(run_id: str, job_ids: list[str]):
     manager.active_run_id = run_id
     manager.abort_requested = False
 
-    user_agents = _load_user_agents()
-    user_agent = random.choice(user_agents)
+    try:
+        user_agents = _load_user_agents()
+        user_agent = random.choice(user_agents)
 
-    async with async_session() as db:
-        # Load jobs
-        stmt = select(TrackingJob).where(TrackingJob.id.in_(job_ids))
-        result = await db.execute(stmt)
-        jobs = list(result.scalars().all())
+        async with async_session() as db:
+            # Load jobs
+            stmt = select(TrackingJob).where(TrackingJob.id.in_(job_ids))
+            result = await db.execute(stmt)
+            jobs = list(result.scalars().all())
 
-        # Update run with total
-        run = await db.get(TrackingRun, run_id)
-        if not run:
-            return
-        run.total_jobs = len(jobs)
-        await db.commit()
-
-        await manager.broadcast(run_id, {
-            "type": "run_started",
-            "run_id": run_id,
-            "progress": {"total": len(jobs), "completed": 0, "failed": 0},
-        })
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=user_agent,
-        )
-        page = await context.new_page()
-
-        completed = 0
-        failed = 0
-
-        for i, job in enumerate(jobs):
-            if manager.abort_requested:
-                break
-
-            await manager.broadcast(run_id, {
-                "type": "job_started",
-                "job_id": job.id,
-                "message": f"Crawling: {job.query} (gl={job.gl}, hl={job.hl})",
-                "progress": {"total": len(jobs), "completed": completed, "failed": failed, "current": i + 1},
-            })
-
-            async with async_session() as db:
-                # Re-fetch job in this session
-                fresh_job = await db.get(TrackingJob, job.id)
-                fresh_run = await db.get(TrackingRun, run_id)
-                if not fresh_job or not fresh_run:
-                    continue
-
-                crawl_result = await _crawl_single_job(page, fresh_job, fresh_run, db, manager)
-
-                if crawl_result.error:
-                    failed += 1
-                else:
-                    completed += 1
-
-                fresh_run.completed_jobs = completed
-                fresh_run.failed_jobs = failed
-                await db.commit()
-
-            await manager.broadcast(run_id, {
-                "type": "job_completed",
-                "job_id": job.id,
-                "progress": {"total": len(jobs), "completed": completed, "failed": failed},
-                "result": {
-                    "position": crawl_result.organic_position,
-                    "aio_present": crawl_result.aio_present,
-                    "aio_url_cited": crawl_result.aio_url_cited,
-                    "error": crawl_result.error,
-                },
-            })
-
-            # Random delay between jobs
-            if i < len(jobs) - 1 and not manager.abort_requested:
-                delay = random.uniform(CRAWL_DELAY_MIN, CRAWL_DELAY_MAX)
-                await asyncio.sleep(delay)
-
-        await context.close()
-        await browser.close()
-
-    # Finalize run
-    async with async_session() as db:
-        run = await db.get(TrackingRun, run_id)
-        if run:
-            run.completed_at = datetime.now(timezone.utc)
-            run.status = "aborted" if manager.abort_requested else "completed"
-            run.completed_jobs = completed
-            run.failed_jobs = failed
+            # Update run with total
+            run = await db.get(TrackingRun, run_id)
+            if not run:
+                return
+            run.total_jobs = len(jobs)
             await db.commit()
 
-    await manager.broadcast(run_id, {
-        "type": "run_completed",
-        "run_id": run_id,
-        "status": "aborted" if manager.abort_requested else "completed",
-        "progress": {"total": len(jobs), "completed": completed, "failed": failed},
-    })
+            await manager.broadcast(run_id, {
+                "type": "run_started",
+                "run_id": run_id,
+                "progress": {"total": len(jobs), "completed": 0, "failed": 0},
+            })
 
-    manager.active_run_id = None
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent=user_agent,
+            )
+            page = await context.new_page()
+
+            completed = 0
+            failed = 0
+
+            for i, job in enumerate(jobs):
+                if manager.abort_requested:
+                    break
+
+                await manager.broadcast(run_id, {
+                    "type": "job_started",
+                    "job_id": job.id,
+                    "message": f"Crawling: {job.query} (gl={job.gl}, hl={job.hl})",
+                    "progress": {"total": len(jobs), "completed": completed, "failed": failed, "current": i + 1},
+                })
+
+                async with async_session() as db:
+                    # Re-fetch job in this session
+                    fresh_job = await db.get(TrackingJob, job.id)
+                    fresh_run = await db.get(TrackingRun, run_id)
+                    if not fresh_job or not fresh_run:
+                        continue
+
+                    crawl_result = await _crawl_single_job(page, fresh_job, fresh_run, db, manager)
+
+                    if crawl_result.error:
+                        failed += 1
+                    else:
+                        completed += 1
+
+                    fresh_run.completed_jobs = completed
+                    fresh_run.failed_jobs = failed
+                    await db.commit()
+
+                await manager.broadcast(run_id, {
+                    "type": "job_completed",
+                    "job_id": job.id,
+                    "progress": {"total": len(jobs), "completed": completed, "failed": failed},
+                    "result": {
+                        "position": crawl_result.organic_position,
+                        "aio_present": crawl_result.aio_present,
+                        "aio_url_cited": crawl_result.aio_url_cited,
+                        "error": crawl_result.error,
+                    },
+                })
+
+                # Random delay between jobs
+                if i < len(jobs) - 1 and not manager.abort_requested:
+                    delay = random.uniform(CRAWL_DELAY_MIN, CRAWL_DELAY_MAX)
+                    await asyncio.sleep(delay)
+
+            await context.close()
+            await browser.close()
+
+        # Finalize run
+        async with async_session() as db:
+            run = await db.get(TrackingRun, run_id)
+            if run:
+                run.completed_at = datetime.now(timezone.utc)
+                run.status = "aborted" if manager.abort_requested else "completed"
+                run.completed_jobs = completed
+                run.failed_jobs = failed
+                await db.commit()
+
+        await manager.broadcast(run_id, {
+            "type": "run_completed",
+            "run_id": run_id,
+            "status": "aborted" if manager.abort_requested else "completed",
+            "progress": {"total": len(jobs), "completed": completed, "failed": failed},
+        })
+
+    except Exception:
+        logger.exception("execute_run failed for run_id=%s", run_id)
+
+        # Mark run as failed in DB
+        try:
+            async with async_session() as db:
+                run = await db.get(TrackingRun, run_id)
+                if run:
+                    run.status = "failed"
+                    run.completed_at = datetime.now(timezone.utc)
+                    await db.commit()
+        except Exception:
+            logger.exception("Failed to mark run %s as failed in DB", run_id)
+
+        # Notify connected WebSocket clients
+        try:
+            await manager.broadcast(run_id, {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error": "Run failed unexpectedly. Check server logs.",
+            })
+        except Exception:
+            logger.exception("Failed to broadcast failure for run %s", run_id)
+
+    finally:
+        manager.active_run_id = None

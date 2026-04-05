@@ -1,5 +1,6 @@
 """Tracking runs endpoints."""
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select, desc
@@ -12,6 +13,16 @@ from ..models.schemas import RunCreate, RunResponse, RunDetailResponse, ResultBr
 from ..services.crawl_engine import RunManager, execute_run
 
 router = APIRouter(tags=["runs"])
+logger = logging.getLogger(__name__)
+
+
+def _task_done_callback(task: asyncio.Task):
+    if task.cancelled():
+        logger.warning("Run task was cancelled")
+        return
+    exc = task.exception()
+    if exc:
+        logger.error("Run task raised an exception: %s", exc, exc_info=exc)
 
 
 @router.post("/api/runs", response_model=RunResponse, status_code=201)
@@ -43,7 +54,8 @@ async def trigger_run(run_data: RunCreate, db: AsyncSession = Depends(get_db)):
 
     # Launch crawl in background
     job_ids = [j.id for j in jobs]
-    asyncio.create_task(execute_run(run.id, job_ids))
+    task = asyncio.create_task(execute_run(run.id, job_ids))
+    task.add_done_callback(_task_done_callback)
 
     return RunResponse.model_validate(run)
 
