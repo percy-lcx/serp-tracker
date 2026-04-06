@@ -79,6 +79,7 @@ class ResultResponse(BaseModel):
     screenshot_page2_path: Optional[str] = None
     screenshot_aio_path: Optional[str] = None
     error: Optional[str] = None
+    debug_log: Optional[str] = None
     aio_citations: List[AioCitationResponse] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}

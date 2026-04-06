@@ -139,9 +139,11 @@ async def _crawl_single_job(
         run_id=run.id,
     )
     screenshot_dir = SCREENSHOT_DIR / run.id / job.id
+    debug_lines = []
 
     async def _debug(msg: str):
         logger.info("[job:%s] %s", job.id[:8], msg)
+        debug_lines.append(msg)
         await manager.broadcast(run.id, {"type": "debug_log", "job_id": job.id, "message": msg})
 
     try:
@@ -192,13 +194,25 @@ async def _crawl_single_job(
             await page.wait_for_timeout(2000)
             await _debug("Re-navigated after CAPTCHA resolution")
 
+        # Page structure diagnostics
+        diag_parts = []
+        for sel in ["#search", "#rso", "#main", ".g", "h3"]:
+            try:
+                cnt = await page.locator(sel).count()
+                if cnt > 0:
+                    diag_parts.append(f"{sel}={cnt}")
+            except Exception:
+                pass
+        await _debug(f"Page structure: {', '.join(diag_parts) or 'no known containers found'}")
+
         # AIO detection
         aio_data = await detect_aio(page)
         aio_debug = aio_data.get("debug", {})
 
         if aio_data["element"]:
+            method = aio_debug.get("detection_method", "unknown")
             await _debug(
-                f"AIO detected — selector: {aio_debug.get('matched_selector', '?')}, "
+                f"AIO detected ({method}) — selector: {aio_debug.get('matched_selector', '?')}, "
                 f"content: {aio_debug.get('content_length', 0)} chars, "
                 f"citations: {aio_debug.get('citations_found', 0)}"
             )
@@ -333,6 +347,7 @@ async def _crawl_single_job(
         except Exception:
             pass
 
+    result.debug_log = "\n".join(debug_lines)
     db.add(result)
     await db.commit()
     return result

@@ -26,3 +26,23 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Add columns that may be missing from older databases
+    async with engine.begin() as conn:
+        from sqlalchemy import text, inspect as sa_inspect
+
+        def _add_missing_columns(connection):
+            inspector = sa_inspect(connection)
+            for table_name, columns_to_add in [
+                ("tracking_results", [("debug_log", "TEXT")]),
+            ]:
+                if not inspector.has_table(table_name):
+                    continue
+                existing = {c["name"] for c in inspector.get_columns(table_name)}
+                for col_name, col_type in columns_to_add:
+                    if col_name not in existing:
+                        connection.execute(text(
+                            f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
+                        ))
+
+        await conn.run_sync(_add_missing_columns)

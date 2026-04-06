@@ -160,7 +160,15 @@ export default function RunDetail() {
                             rel="noopener noreferrer"
                             className="btn btn-outline btn-sm"
                           >
-                            Full
+                            P1
+                          </a>
+                          <a
+                            href={api.getScreenshotUrl(result.id, 'page2')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline btn-sm"
+                          >
+                            P2
                           </a>
                           <a
                             href={api.getScreenshotUrl(result.id, 'aio')}

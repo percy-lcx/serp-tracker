@@ -36,10 +36,58 @@ def normalize_url(url: str) -> str:
     return f"{host}{path}".lower()
 
 
-async def detect_aio(page: Page) -> Optional[dict]:
+async def _find_aio_by_text(page: Page) -> Optional[object]:
+    """Fallback AIO detection: find container by looking for 'AI Overview' header text."""
+    try:
+        # Look for elements that contain the exact text "AI Overview"
+        header = page.get_by_text("AI Overview", exact=True).first
+        if await header.count() == 0:
+            return None
+
+        # Walk up to find a meaningful container parent
+        # The AIO section is typically a large container div wrapping the header + content
+        # Try getting progressively larger parent containers
+        for ancestor_sel in [
+            "xpath=./ancestor::div[contains(@class, 'M8OgIe')]",
+            "xpath=./ancestor::div[contains(@class, 'wDYxhc')]",
+            "xpath=./ancestor::div[contains(@class, 'Wt5Tfe')]",
+            "xpath=./ancestor::div[@data-md]",
+            "xpath=./ancestor::div[@jscontroller]",
+        ]:
+            try:
+                ancestor = header.locator(ancestor_sel).last
+                if await ancestor.count() > 0:
+                    # Verify it's a substantial container (not just a tiny wrapper)
+                    box = await ancestor.bounding_box()
+                    if box and box["height"] > 100:
+                        return ancestor
+            except Exception:
+                continue
+
+        # Last resort: grab the direct parent's parent chain up 3 levels
+        current = header
+        for _ in range(5):
+            try:
+                current = current.locator("xpath=./parent::div").first
+                if await current.count() == 0:
+                    break
+                box = await current.bounding_box()
+                if box and box["height"] > 200 and box["width"] > 400:
+                    return current
+            except Exception:
+                break
+
+    except Exception as e:
+        logger.debug("Text-based AIO detection failed: %s", e)
+
+    return None
+
+
+async def detect_aio(page: Page) -> dict:
     """Detect and extract AI Overview content and citations from a SERP page.
 
-    Returns dict with keys: content, citations, element, debug (diagnostics) or None if no AIO.
+    Always returns a dict with keys: content, citations, element, debug.
+    element is None if no AIO was found.
     """
     selectors = load_selectors()
     debug = {
@@ -50,8 +98,12 @@ async def detect_aio(page: Page) -> Optional[dict]:
         "citation_fallback_used": False,
         "citations_found": 0,
         "selector_errors": [],
+        "detection_method": None,
     }
 
+    no_aio = {"content": "", "citations": [], "element": None, "debug": debug}
+
+    # Phase 1: Try CSS selectors from config
     aio_element = None
     for selector in selectors["aio_container_selectors"]:
         debug["selectors_tried"] += 1
@@ -61,6 +113,7 @@ async def detect_aio(page: Page) -> Optional[dict]:
             if count > 0 and await el.is_visible():
                 aio_element = el
                 debug["matched_selector"] = selector
+                debug["detection_method"] = "css_selector"
                 logger.info("AIO detected with selector: %s", selector)
                 break
             else:
@@ -69,9 +122,18 @@ async def detect_aio(page: Page) -> Optional[dict]:
             debug["selector_errors"].append(f"{selector}: {e}")
             continue
 
+    # Phase 2: Text-based fallback — look for "AI Overview" header text
     if aio_element is None:
-        logger.info("AIO not found after trying %d selectors", debug["selectors_tried"])
-        return {"content": "", "citations": [], "element": None, "debug": debug}
+        logger.info("CSS selectors failed, trying text-based AIO detection")
+        aio_element = await _find_aio_by_text(page)
+        if aio_element is not None:
+            debug["matched_selector"] = "text:'AI Overview' (ancestor walk)"
+            debug["detection_method"] = "text_fallback"
+            logger.info("AIO detected via text-based fallback")
+
+    if aio_element is None:
+        logger.info("AIO not found after CSS selectors + text fallback")
+        return no_aio
 
     # Extract content from AIO element
     content = ""
@@ -82,18 +144,16 @@ async def detect_aio(page: Page) -> Optional[dict]:
         content = ""
     debug["content_length"] = len(content.strip())
 
-    # Extract citations: find all links within the AIO element
+    # Extract citations
     citations = []
 
-    # First try specific selectors scoped within the AIO element
+    # Try specific selectors scoped within the AIO element
     for selector in selectors["aio_citation_selectors"]:
         try:
-            # Try scoped to element first
             links = aio_element.locator(selector)
             count = await links.count()
             scope = "element"
             if count == 0:
-                # Fall back to page-level selector (some selectors include the container)
                 links = page.locator(selector)
                 count = await links.count()
                 scope = "page"
