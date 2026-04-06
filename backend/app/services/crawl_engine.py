@@ -140,14 +140,21 @@ async def _crawl_single_job(
     )
     screenshot_dir = SCREENSHOT_DIR / run.id / job.id
 
+    async def _debug(msg: str):
+        logger.info("[job:%s] %s", job.id[:8], msg)
+        await manager.broadcast(run.id, {"type": "debug_log", "job_id": job.id, "message": msg})
+
     try:
         # Navigate to page 1
         url = f"https://www.google.com/search?q={job.query}&gl={job.gl}&hl={job.hl}&num=10"
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
+        await _debug(f"Navigated to Google SERP: q={job.query}")
 
         # CAPTCHA check
-        if await _detect_captcha(page):
+        captcha_detected = await _detect_captcha(page)
+        await _debug(f"CAPTCHA check: {'DETECTED' if captcha_detected else 'clear'}")
+        if captcha_detected:
             await manager.broadcast(run.id, {
                 "type": "captcha_required",
                 "job_id": job.id,
@@ -164,6 +171,7 @@ async def _crawl_single_job(
 
             if not resolved:
                 result.error = "CAPTCHA timeout - not resolved within time limit"
+                await _debug("CAPTCHA timeout — aborting job")
                 db.add(result)
                 await db.commit()
                 return result
@@ -182,28 +190,44 @@ async def _crawl_single_job(
             # Re-navigate after CAPTCHA
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(2000)
+            await _debug("Re-navigated after CAPTCHA resolution")
 
         # AIO detection
         aio_data = await detect_aio(page)
-        if aio_data:
+        aio_debug = aio_data.get("debug", {})
+
+        if aio_data["element"]:
+            await _debug(
+                f"AIO detected — selector: {aio_debug.get('matched_selector', '?')}, "
+                f"content: {aio_debug.get('content_length', 0)} chars, "
+                f"citations: {aio_debug.get('citations_found', 0)}"
+            )
+            if aio_debug.get("citation_selector_matched"):
+                await _debug(f"AIO citations matched via: {aio_debug['citation_selector_matched']}")
+            elif aio_debug.get("citation_fallback_used"):
+                await _debug("AIO citations: used generic a[href] fallback")
+
             result.aio_present = True
             result.aio_content = aio_data["content"]
 
             # Screenshot AIO element
-            if aio_data["element"]:
-                aio_screenshot_path = screenshot_dir / "aio.png"
-                aio_screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            aio_screenshot_path = screenshot_dir / "aio.png"
+            aio_screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                await aio_data["element"].screenshot(path=str(aio_screenshot_path))
+                result.screenshot_aio_path = str(aio_screenshot_path)
+                await _debug(f"AIO screenshot saved: {aio_screenshot_path}")
+            except Exception as e1:
+                await _debug(f"AIO element screenshot failed: {e1} — trying full-page fallback")
+                # Fallback: scroll into view and take full-page screenshot
                 try:
-                    await aio_data["element"].screenshot(path=str(aio_screenshot_path))
+                    await aio_data["element"].scroll_into_view_if_needed()
+                    await page.screenshot(path=str(aio_screenshot_path), full_page=True)
                     result.screenshot_aio_path = str(aio_screenshot_path)
-                except Exception:
-                    # Fallback: scroll into view and take full-page screenshot
-                    try:
-                        await aio_data["element"].scroll_into_view_if_needed()
-                        await page.screenshot(path=str(aio_screenshot_path), full_page=True)
-                        result.screenshot_aio_path = str(aio_screenshot_path)
-                    except Exception as e:
-                        logger.warning("Failed to screenshot AIO: %s", e)
+                    await _debug(f"AIO screenshot (full-page fallback) saved: {aio_screenshot_path}")
+                except Exception as e2:
+                    await _debug(f"AIO screenshot fallback also failed: {e2}")
+                    logger.warning("Failed to screenshot AIO: %s", e2)
 
             # Process citations
             is_cited, citation_pos = match_citations_to_target(
@@ -211,6 +235,7 @@ async def _crawl_single_job(
             )
             result.aio_url_cited = is_cited
             result.aio_citation_position = citation_pos
+            await _debug(f"AIO target match: cited={is_cited}, citation_position={citation_pos}")
 
             # Save citation records
             for i, cit in enumerate(aio_data["citations"]):
@@ -222,21 +247,32 @@ async def _crawl_single_job(
                     is_target=normalize_url(cit["url"]) == normalize_url(job.target_url),
                 )
                 result.aio_citations.append(aio_cit)
+        else:
+            errors = aio_debug.get("selector_errors", [])
+            error_info = f", errors: {errors}" if errors else ""
+            await _debug(
+                f"AIO not detected — tried {aio_debug.get('selectors_tried', 0)} selectors{error_info}"
+            )
 
         # Screenshot page 1
         await _take_screenshot(page, screenshot_dir / "page1.png")
         result.screenshot_page1_path = str(screenshot_dir / "page1.png")
+        await _debug(f"Page 1 screenshot saved: {screenshot_dir / 'page1.png'}")
 
         # Parse page 1
         page1_results = await parse_organic_results(page, page_number=1)
+        await _debug(f"Page 1 parsed: {len(page1_results)} organic results")
 
         # Navigate to page 2
         page2_url = f"{url}&start=10"
         await page.goto(page2_url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
+        await _debug("Navigated to page 2")
 
         # CAPTCHA check page 2
-        if await _detect_captcha(page):
+        captcha_p2 = await _detect_captcha(page)
+        if captcha_p2:
+            await _debug("CAPTCHA detected on page 2")
             await manager.broadcast(run.id, {
                 "type": "captcha_required",
                 "job_id": job.id,
@@ -262,15 +298,18 @@ async def _crawl_single_job(
         # Screenshot page 2
         await _take_screenshot(page, screenshot_dir / "page2.png")
         result.screenshot_page2_path = str(screenshot_dir / "page2.png")
+        await _debug(f"Page 2 screenshot saved: {screenshot_dir / 'page2.png'}")
 
         # Parse page 2
         page2_results = await parse_organic_results(page, page_number=2)
+        await _debug(f"Page 2 parsed: {len(page2_results)} organic results")
 
         # Combine results and find target
         all_results = page1_results + page2_results
         result.total_organic_results = len(all_results)
 
         target_normalized = normalize_url(job.target_url)
+        found = False
         for r in all_results:
             if normalize_url(r["url"]) == target_normalized:
                 result.organic_position = r["position"]
@@ -278,11 +317,21 @@ async def _crawl_single_job(
                 result.result_url = r["url"]
                 result.result_title = r["title"]
                 result.result_description = r["description"]
+                found = True
                 break
+
+        if found:
+            await _debug(f"Target found: position={result.organic_position}, page={result.organic_page}")
+        else:
+            await _debug(f"Target URL not found in {len(all_results)} results (target: {job.target_url})")
 
     except Exception as e:
         logger.error("Error crawling job %s: %s", job.id, e)
         result.error = str(e)
+        try:
+            await _debug(f"Job error: {e}")
+        except Exception:
+            pass
 
     db.add(result)
     await db.commit()

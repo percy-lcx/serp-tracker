@@ -39,30 +39,48 @@ def normalize_url(url: str) -> str:
 async def detect_aio(page: Page) -> Optional[dict]:
     """Detect and extract AI Overview content and citations from a SERP page.
 
-    Returns dict with keys: content, citations, element (for screenshot) or None if no AIO.
+    Returns dict with keys: content, citations, element, debug (diagnostics) or None if no AIO.
     """
     selectors = load_selectors()
+    debug = {
+        "selectors_tried": 0,
+        "matched_selector": None,
+        "content_length": 0,
+        "citation_selector_matched": None,
+        "citation_fallback_used": False,
+        "citations_found": 0,
+        "selector_errors": [],
+    }
 
     aio_element = None
     for selector in selectors["aio_container_selectors"]:
+        debug["selectors_tried"] += 1
         try:
             el = page.locator(selector).first
-            if await el.count() > 0 and await el.is_visible():
+            count = await el.count()
+            if count > 0 and await el.is_visible():
                 aio_element = el
+                debug["matched_selector"] = selector
                 logger.info("AIO detected with selector: %s", selector)
                 break
-        except Exception:
+            else:
+                logger.debug("AIO selector '%s': count=%d", selector, count)
+        except Exception as e:
+            debug["selector_errors"].append(f"{selector}: {e}")
             continue
 
     if aio_element is None:
-        return None
+        logger.info("AIO not found after trying %d selectors", debug["selectors_tried"])
+        return {"content": "", "citations": [], "element": None, "debug": debug}
 
     # Extract content from AIO element
     content = ""
     try:
         content = await aio_element.inner_text()
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to extract AIO content: %s", e)
         content = ""
+    debug["content_length"] = len(content.strip())
 
     # Extract citations: find all links within the AIO element
     citations = []
@@ -73,10 +91,12 @@ async def detect_aio(page: Page) -> Optional[dict]:
             # Try scoped to element first
             links = aio_element.locator(selector)
             count = await links.count()
+            scope = "element"
             if count == 0:
                 # Fall back to page-level selector (some selectors include the container)
                 links = page.locator(selector)
                 count = await links.count()
+                scope = "page"
             if count > 0:
                 for i in range(count):
                     link = links.nth(i)
@@ -88,12 +108,14 @@ async def detect_aio(page: Page) -> Optional[dict]:
                             "title": title.strip() if title else None,
                         })
                 if citations:
+                    debug["citation_selector_matched"] = f"{selector} ({scope}-scoped, {count} links)"
                     break
         except Exception:
             continue
 
     # Fallback: find all links within the AIO element generically
     if not citations:
+        debug["citation_fallback_used"] = True
         try:
             links = aio_element.locator("a[href]")
             count = await links.count()
@@ -118,10 +140,13 @@ async def detect_aio(page: Page) -> Optional[dict]:
             seen.add(normalized)
             unique_citations.append(c)
 
+    debug["citations_found"] = len(unique_citations)
+
     return {
         "content": content.strip(),
         "citations": unique_citations,
         "element": aio_element,
+        "debug": debug,
     }
 
 

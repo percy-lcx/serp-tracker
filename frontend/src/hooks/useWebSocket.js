@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 export function useRunWebSocket(runId) {
   const [messages, setMessages] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [progress, setProgress] = useState(null);
   const [status, setStatus] = useState(null);
   const wsRef = useRef(null);
@@ -17,6 +18,10 @@ export function useRunWebSocket(runId) {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       setMessages((prev) => [...prev, data]);
+
+      if (data.type === 'debug_log') {
+        setLogs((prev) => [...prev, { time: new Date(), message: data.message, job_id: data.job_id }]);
+      }
 
       if (data.progress) setProgress(data.progress);
       if (data.type === 'captcha_required') setStatus('paused_captcha');
@@ -45,9 +50,10 @@ export function useRunWebSocket(runId) {
 
   const reset = useCallback(() => {
     setMessages([]);
+    setLogs([]);
     setProgress(null);
     setStatus(null);
   }, []);
 
-  return { messages, progress, status, reset };
+  return { messages, logs, progress, status, reset };
 }

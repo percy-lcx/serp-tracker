@@ -50,7 +50,9 @@ export default function RunControl() {
   const [elapsed, setElapsed] = useState(0);
 
   const timerRef = useRef(null);
-  const { messages, progress, status, reset } = useRunWebSocket(runId);
+  const { messages, logs, progress, status, reset } = useRunWebSocket(runId);
+  const [showLogs, setShowLogs] = useState(true);
+  const logEndRef = useRef(null);
 
   // Load jobs on mount
   useEffect(() => {
@@ -70,6 +72,13 @@ export default function RunControl() {
       cancelled = true;
     };
   }, []);
+
+  // Auto-scroll debug log
+  useEffect(() => {
+    if (showLogs && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, showLogs]);
 
   // Elapsed timer while running
   useEffect(() => {
@@ -309,6 +318,48 @@ export default function RunControl() {
                   );
                 })}
               </ul>
+            </div>
+          )}
+
+          {/* Debug log panel */}
+          {logs.length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Debug Log ({logs.length})</h3>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setShowLogs((v) => !v)}
+                >
+                  {showLogs ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {showLogs && (
+                <div
+                  style={{
+                    marginTop: '0.5rem',
+                    maxHeight: '400px',
+                    overflow: 'auto',
+                    background: '#1a1a2e',
+                    color: '#e0e0e0',
+                    borderRadius: '6px',
+                    padding: '0.75rem',
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  {logs.map((entry, i) => {
+                    const ts = entry.time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    return (
+                      <div key={i}>
+                        <span style={{ color: '#888' }}>{ts}</span>{' '}
+                        <span>{entry.message}</span>
+                      </div>
+                    );
+                  })}
+                  <div ref={logEndRef} />
+                </div>
+              )}
             </div>
           )}
         </div>
