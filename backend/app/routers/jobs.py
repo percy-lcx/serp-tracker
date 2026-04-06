@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from ..database import get_db
 from ..models.models import TrackingJob, TrackingResult
-from ..models.schemas import JobCreate, JobUpdate, JobResponse
+from ..models.schemas import JobCreate, JobUpdate, JobResponse, ResultResponse
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -111,7 +111,7 @@ async def import_jobs(file: UploadFile = File(...), db: AsyncSession = Depends(g
     return {"created": created, "errors": errors}
 
 
-@router.get("/{job_id}/results", response_model=list)
+@router.get("/{job_id}/results", response_model=list[ResultResponse])
 async def get_job_results(
     job_id: str,
     limit: int = 50,
@@ -133,5 +133,4 @@ async def get_job_results(
     result = await db.execute(stmt)
     results = result.scalars().all()
 
-    from ..models.schemas import ResultResponse
     return [ResultResponse.model_validate(r) for r in results]

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field
 
 
 class JobCreate(BaseModel):
@@ -29,14 +29,25 @@ class JobResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    latest_position: Optional[int] = None
+    latest_position: Optional[int] = Field(default=None, serialization_alias="position")
     previous_position: Optional[int] = None
     position_change: Optional[int] = None
     latest_aio_present: Optional[bool] = None
-    latest_aio_url_cited: Optional[bool] = None
+    latest_aio_url_cited: Optional[bool] = Field(default=None, serialization_alias="aio_cited")
     last_checked: Optional[datetime] = None
 
-    model_config = {"from_attributes": True}
+    @computed_field
+    @property
+    def aio_status(self) -> Optional[str]:
+        if self.latest_aio_present is None:
+            return None
+        if not self.latest_aio_present:
+            return "absent"
+        if self.latest_aio_url_cited:
+            return "cited"
+        return "present"
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class AioCitationResponse(BaseModel):
@@ -54,23 +65,23 @@ class ResultResponse(BaseModel):
     job_id: str
     run_id: str
     checked_at: datetime
-    organic_position: Optional[int]
-    organic_page: Optional[int]
-    result_url: Optional[str]
-    result_title: Optional[str]
-    result_description: Optional[str]
-    total_organic_results: int
-    aio_present: bool
-    aio_url_cited: bool
-    aio_citation_position: Optional[int]
-    aio_content: Optional[str]
-    screenshot_page1_path: Optional[str]
-    screenshot_page2_path: Optional[str]
-    screenshot_aio_path: Optional[str]
-    error: Optional[str]
+    organic_position: Optional[int] = Field(default=None, serialization_alias="position")
+    organic_page: Optional[int] = None
+    result_url: Optional[str] = None
+    result_title: Optional[str] = None
+    result_description: Optional[str] = None
+    total_organic_results: int = 0
+    aio_present: bool = False
+    aio_url_cited: bool = Field(default=False, serialization_alias="aio_cited")
+    aio_citation_position: Optional[int] = Field(default=None, serialization_alias="aio_position")
+    aio_content: Optional[str] = None
+    screenshot_page1_path: Optional[str] = None
+    screenshot_page2_path: Optional[str] = None
+    screenshot_aio_path: Optional[str] = None
+    error: Optional[str] = None
     aio_citations: List[AioCitationResponse] = []
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class ResultBrief(BaseModel):
@@ -78,13 +89,13 @@ class ResultBrief(BaseModel):
     job_id: str
     run_id: str
     checked_at: datetime
-    organic_position: Optional[int]
-    organic_page: Optional[int]
-    aio_present: bool
-    aio_url_cited: bool
-    error: Optional[str]
+    organic_position: Optional[int] = Field(default=None, serialization_alias="position")
+    organic_page: Optional[int] = None
+    aio_present: bool = False
+    aio_url_cited: bool = Field(default=False, serialization_alias="aio_cited")
+    error: Optional[str] = None
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class RunCreate(BaseModel):

@@ -155,7 +155,7 @@ export default function RunDetail() {
                       {result.id ? (
                         <div className="flex gap-2">
                           <a
-                            href={api.getScreenshotUrl(result.id, 'full')}
+                            href={api.getScreenshotUrl(result.id, 'page1')}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="btn btn-outline btn-sm"
