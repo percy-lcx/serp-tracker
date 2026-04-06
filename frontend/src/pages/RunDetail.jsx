@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
 function statusBadge(status) {
@@ -29,6 +29,7 @@ function progressPercent(run) {
 
 export default function RunDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [run, setRun] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,7 +55,7 @@ export default function RunDetail() {
   return (
     <div>
       <div className="flex items-center gap-4 mb-4">
-        <Link to="/history" className="btn btn-outline btn-sm">Back to History</Link>
+        <button className="btn btn-outline btn-sm" onClick={() => navigate(-1)}>Back</button>
         <h1 className="page-title" style={{ marginBottom: 0 }}>Run #{run.id}</h1>
       </div>
 
