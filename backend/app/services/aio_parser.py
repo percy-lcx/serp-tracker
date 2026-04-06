@@ -57,30 +57,26 @@ async def detect_aio(page: Page) -> Optional[dict]:
     if aio_element is None:
         return None
 
-    # Extract content
+    # Extract content from AIO element
     content = ""
-    for selector in selectors["aio_content_selectors"]:
-        try:
-            content_el = aio_element.locator(selector).first
-            if await content_el.count() > 0:
-                content = await content_el.inner_text()
-                if content.strip():
-                    break
-        except Exception:
-            continue
+    try:
+        content = await aio_element.inner_text()
+    except Exception:
+        content = ""
 
-    if not content.strip():
-        try:
-            content = await aio_element.inner_text()
-        except Exception:
-            content = ""
-
-    # Extract citations
+    # Extract citations: find all links within the AIO element
     citations = []
+
+    # First try specific selectors scoped within the AIO element
     for selector in selectors["aio_citation_selectors"]:
         try:
+            # Try scoped to element first
             links = aio_element.locator(selector)
             count = await links.count()
+            if count == 0:
+                # Fall back to page-level selector (some selectors include the container)
+                links = page.locator(selector)
+                count = await links.count()
             if count > 0:
                 for i in range(count):
                     link = links.nth(i)
@@ -95,6 +91,23 @@ async def detect_aio(page: Page) -> Optional[dict]:
                     break
         except Exception:
             continue
+
+    # Fallback: find all links within the AIO element generically
+    if not citations:
+        try:
+            links = aio_element.locator("a[href]")
+            count = await links.count()
+            for i in range(count):
+                link = links.nth(i)
+                href = await link.get_attribute("href")
+                title = await link.inner_text()
+                if href and href.startswith("http") and "google.com" not in href:
+                    citations.append({
+                        "url": href,
+                        "title": title.strip() if title else None,
+                    })
+        except Exception:
+            pass
 
     # Deduplicate citations by URL
     seen = set()
