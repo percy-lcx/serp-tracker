@@ -61,7 +61,7 @@ async def detect_aio(page: Page) -> Optional[dict]:
     content = ""
     for selector in selectors["aio_content_selectors"]:
         try:
-            content_el = page.locator(selector).first
+            content_el = aio_element.locator(selector).first
             if await content_el.count() > 0:
                 content = await content_el.inner_text()
                 if content.strip():
@@ -79,7 +79,7 @@ async def detect_aio(page: Page) -> Optional[dict]:
     citations = []
     for selector in selectors["aio_citation_selectors"]:
         try:
-            links = page.locator(selector)
+            links = aio_element.locator(selector)
             count = await links.count()
             if count > 0:
                 for i in range(count):

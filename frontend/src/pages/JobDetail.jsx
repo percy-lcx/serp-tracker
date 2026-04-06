@@ -282,7 +282,7 @@ export default function JobDetail() {
 }
 
 function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshotClick }) {
-  const fullScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'full') : null;
+  const fullScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page1') : null;
   const aioScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'aio') : null;
 
   return (
