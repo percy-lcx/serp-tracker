@@ -160,7 +160,7 @@ export default function RunControl() {
     const job = jobs.find((j) => j.id === jid);
     return {
       id: jid,
-      label: job ? `${job.domain} — "${job.keyword}"` : `Job ${jid}`,
+      label: job ? job.query : `Job ${jid}`,
       status: getJobStatus(messages, jid),
     };
   });
@@ -211,9 +211,8 @@ export default function RunControl() {
                     onChange={handleSelectAll}
                   />
                 </th>
-                <th style={{ textAlign: 'left', padding: '0.5rem' }}>Domain</th>
-                <th style={{ textAlign: 'left', padding: '0.5rem' }}>Keyword</th>
-                <th style={{ textAlign: 'left', padding: '0.5rem' }}>Engine</th>
+                <th style={{ textAlign: 'left', padding: '0.5rem' }}>Query</th>
+                <th style={{ textAlign: 'left', padding: '0.5rem' }}>Target URL</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem' }}>Active</th>
               </tr>
             </thead>
@@ -227,12 +226,11 @@ export default function RunControl() {
                       onChange={() => handleToggle(job.id)}
                     />
                   </td>
-                  <td style={{ padding: '0.5rem' }}>{job.domain}</td>
-                  <td style={{ padding: '0.5rem' }}>{job.keyword}</td>
-                  <td style={{ padding: '0.5rem' }}>{job.engine || 'google'}</td>
+                  <td style={{ padding: '0.5rem' }}>{job.query}</td>
+                  <td style={{ padding: '0.5rem', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.target_url}</td>
                   <td style={{ padding: '0.5rem' }}>
-                    <span className={job.is_active ? 'badge-success' : 'badge-secondary'}>
-                      {job.is_active ? 'Yes' : 'No'}
+                    <span className={job.active ? 'badge-success' : 'badge-secondary'}>
+                      {job.active ? 'Yes' : 'No'}
                     </span>
                   </td>
                 </tr>

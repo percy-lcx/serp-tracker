@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 
 const EMPTY_FORM = { target_url: '', query: '', gl: 'us', hl: 'en' };
@@ -264,7 +265,11 @@ export default function Jobs() {
                       onChange={() => toggleSelect(job.id)}
                     />
                   </td>
-                  <td>{job.query}</td>
+                  <td>
+                    <Link to={`/jobs/${job.id}`} style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 500 }}>
+                      {job.query}
+                    </Link>
+                  </td>
                   <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {job.target_url}
                   </td>
