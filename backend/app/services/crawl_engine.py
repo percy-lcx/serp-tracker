@@ -6,11 +6,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from playwright.async_api import async_playwright, BrowserContext, Page
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import (
+    BROWSER_DATA_DIR,
     CAPTCHA_TIMEOUT,
     CRAWL_DELAY_MAX,
     CRAWL_DELAY_MIN,
@@ -63,6 +64,64 @@ class RunManager:
 
     def request_abort(self):
         self.abort_requested = True
+
+
+class BrowserManager:
+    """Manages browser lifecycle with persistent context and headless/headed switching."""
+
+    def __init__(self, playwright, user_agent: str):
+        self._playwright = playwright
+        self._user_agent = user_agent
+        self._context: BrowserContext | None = None
+        self._page: Page | None = None
+        self._headless: bool = True
+
+    @property
+    def page(self) -> Page:
+        assert self._page is not None, "Browser not started"
+        return self._page
+
+    @property
+    def is_headless(self) -> bool:
+        return self._headless
+
+    async def start(self, headless: bool = True):
+        """Launch a persistent browser context."""
+        self._headless = headless
+        BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Remove stale lock file from crashed processes
+        lock_file = BROWSER_DATA_DIR / "SingletonLock"
+        if lock_file.exists():
+            try:
+                lock_file.unlink()
+            except OSError:
+                pass
+
+        self._context = await self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(BROWSER_DATA_DIR),
+            headless=headless,
+            viewport={"width": 1920, "height": 1080},
+            user_agent=self._user_agent,
+        )
+        self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+
+    async def restart_headed(self):
+        """Close current context and reopen in headed mode. Cookies persist via the data dir."""
+        await self._close()
+        await self.start(headless=False)
+
+    async def _close(self):
+        if self._context:
+            try:
+                await self._context.close()
+            except Exception:
+                pass
+            self._context = None
+            self._page = None
+
+    async def close(self):
+        await self._close()
 
 
 def _load_user_agents() -> list[str]:
@@ -120,6 +179,59 @@ async def _wait_for_captcha_resolution(page: Page, run_id: str, manager: RunMana
     return False
 
 
+async def _handle_captcha(
+    browser_mgr: BrowserManager,
+    url: str,
+    run_id: str,
+    job_id: str,
+    manager: RunManager,
+    debug_fn,
+) -> tuple[Page, bool]:
+    """Handle CAPTCHA: switch to headed mode if needed, wait for resolution.
+
+    Returns (page, resolved). The page may be a new reference if browser was restarted.
+    """
+    await manager.broadcast(run_id, {
+        "type": "captcha_required",
+        "job_id": job_id,
+        "message": "CAPTCHA detected — please solve it in the browser window",
+    })
+
+    async with async_session() as status_db:
+        run_record = await status_db.get(TrackingRun, run_id)
+        if run_record:
+            run_record.status = "paused_captcha"
+            await status_db.commit()
+
+    # Switch to headed if currently headless
+    if browser_mgr.is_headless:
+        await debug_fn("CAPTCHA in headless mode — restarting browser in headed mode")
+        await browser_mgr.restart_headed()
+        page = browser_mgr.page
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(2000)
+    else:
+        page = browser_mgr.page
+
+    resolved = await _wait_for_captcha_resolution(page, run_id, manager)
+
+    if resolved:
+        await debug_fn("CAPTCHA resolved")
+        await manager.broadcast(run_id, {
+            "type": "captcha_resolved",
+            "message": "CAPTCHA resolved, resuming crawl",
+        })
+        async with async_session() as status_db:
+            run_record = await status_db.get(TrackingRun, run_id)
+            if run_record:
+                run_record.status = "running"
+                await status_db.commit()
+    else:
+        await debug_fn("CAPTCHA timeout — not resolved within time limit")
+
+    return page, resolved
+
+
 async def _take_screenshot(page: Page, path: Path):
     """Take a full-page screenshot and save to path."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +239,7 @@ async def _take_screenshot(page: Page, path: Path):
 
 
 async def _crawl_single_job(
-    page: Page,
+    browser_mgr: BrowserManager,
     job: TrackingJob,
     run: TrackingRun,
     db: AsyncSession,
@@ -147,6 +259,8 @@ async def _crawl_single_job(
         await manager.broadcast(run.id, {"type": "debug_log", "job_id": job.id, "message": msg})
 
     try:
+        page = browser_mgr.page
+
         # Navigate to page 1
         url = f"https://www.google.com/search?q={job.query}&gl={job.gl}&hl={job.hl}&num=10"
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -157,37 +271,15 @@ async def _crawl_single_job(
         captcha_detected = await _detect_captcha(page)
         await _debug(f"CAPTCHA check: {'DETECTED' if captcha_detected else 'clear'}")
         if captcha_detected:
-            await manager.broadcast(run.id, {
-                "type": "captcha_required",
-                "job_id": job.id,
-                "message": "CAPTCHA detected — please solve it in the browser window",
-            })
-
-            async with async_session() as status_db:
-                run_record = await status_db.get(TrackingRun, run.id)
-                if run_record:
-                    run_record.status = "paused_captcha"
-                    await status_db.commit()
-
-            resolved = await _wait_for_captcha_resolution(page, run.id, manager)
-
+            page, resolved = await _handle_captcha(
+                browser_mgr, url, run.id, job.id, manager, _debug
+            )
             if not resolved:
                 result.error = "CAPTCHA timeout - not resolved within time limit"
-                await _debug("CAPTCHA timeout — aborting job")
+                result.debug_log = "\n".join(debug_lines)
                 db.add(result)
                 await db.commit()
                 return result
-
-            await manager.broadcast(run.id, {
-                "type": "captcha_resolved",
-                "message": "CAPTCHA resolved, resuming crawl",
-            })
-
-            async with async_session() as status_db:
-                run_record = await status_db.get(TrackingRun, run.id)
-                if run_record:
-                    run_record.status = "running"
-                    await status_db.commit()
 
             # Re-navigate after CAPTCHA
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -233,7 +325,6 @@ async def _crawl_single_job(
                 await _debug(f"AIO screenshot saved: {aio_screenshot_path}")
             except Exception as e1:
                 await _debug(f"AIO element screenshot failed: {e1} — trying full-page fallback")
-                # Fallback: scroll into view and take full-page screenshot
                 try:
                     await aio_data["element"].scroll_into_view_if_needed()
                     await page.screenshot(path=str(aio_screenshot_path), full_page=True)
@@ -287,25 +378,10 @@ async def _crawl_single_job(
         captcha_p2 = await _detect_captcha(page)
         if captcha_p2:
             await _debug("CAPTCHA detected on page 2")
-            await manager.broadcast(run.id, {
-                "type": "captcha_required",
-                "job_id": job.id,
-                "message": "CAPTCHA detected on page 2 — please solve it in the browser window",
-            })
-            async with async_session() as status_db:
-                run_record = await status_db.get(TrackingRun, run.id)
-                if run_record:
-                    run_record.status = "paused_captcha"
-                    await status_db.commit()
-
-            resolved = await _wait_for_captcha_resolution(page, run.id, manager)
+            page, resolved = await _handle_captcha(
+                browser_mgr, page2_url, run.id, job.id, manager, _debug
+            )
             if resolved:
-                await manager.broadcast(run.id, {"type": "captcha_resolved"})
-                async with async_session() as status_db:
-                    run_record = await status_db.get(TrackingRun, run.id)
-                    if run_record:
-                        run_record.status = "running"
-                        await status_db.commit()
                 await page.goto(page2_url, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(2000)
 
@@ -383,12 +459,8 @@ async def execute_run(run_id: str, job_ids: list[str]):
             })
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=HEADLESS)
-            context = await browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent=user_agent,
-            )
-            page = await context.new_page()
+            browser_mgr = BrowserManager(p, user_agent)
+            await browser_mgr.start(headless=HEADLESS)
 
             completed = 0
             failed = 0
@@ -411,7 +483,7 @@ async def execute_run(run_id: str, job_ids: list[str]):
                     if not fresh_job or not fresh_run:
                         continue
 
-                    crawl_result = await _crawl_single_job(page, fresh_job, fresh_run, db, manager)
+                    crawl_result = await _crawl_single_job(browser_mgr, fresh_job, fresh_run, db, manager)
 
                     if crawl_result.error:
                         failed += 1
@@ -439,8 +511,7 @@ async def execute_run(run_id: str, job_ids: list[str]):
                     delay = random.uniform(CRAWL_DELAY_MIN, CRAWL_DELAY_MAX)
                     await asyncio.sleep(delay)
 
-            await context.close()
-            await browser.close()
+            await browser_mgr.close()
 
         # Finalize run
         async with async_session() as db:

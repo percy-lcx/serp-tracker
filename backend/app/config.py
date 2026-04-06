@@ -17,4 +17,8 @@ USER_AGENT_LIST_PATH = os.getenv("USER_AGENT_LIST_PATH", "./backend/config/user_
 SCREENSHOT_RETENTION_DAYS = int(os.getenv("SCREENSHOT_RETENTION_DAYS", "30"))
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/serp_tracker.db")
 AIO_SELECTORS_PATH = Path(os.getenv("AIO_SELECTORS_PATH", str(BASE_DIR / "backend" / "config" / "aio_selectors.json")))
-HEADLESS = os.getenv("HEADLESS", "false").lower() in ("true", "1", "yes")
+HEADLESS = os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes")
+
+BROWSER_DATA_DIR = Path(os.getenv("BROWSER_DATA_DIR", "./data/browser_profile"))
+if not BROWSER_DATA_DIR.is_absolute():
+    BROWSER_DATA_DIR = BASE_DIR / BROWSER_DATA_DIR
