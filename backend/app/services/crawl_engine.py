@@ -189,14 +189,21 @@ async def _crawl_single_job(
             result.aio_present = True
             result.aio_content = aio_data["content"]
 
-            # Screenshot AIO
+            # Screenshot AIO element
             if aio_data["element"]:
+                aio_screenshot_path = screenshot_dir / "aio.png"
+                aio_screenshot_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    await aio_data["element"].scroll_into_view_if_needed()
-                    await _take_screenshot(page, screenshot_dir / "aio.png")
-                    result.screenshot_aio_path = str(screenshot_dir / "aio.png")
-                except Exception as e:
-                    logger.warning("Failed to screenshot AIO: %s", e)
+                    await aio_data["element"].screenshot(path=str(aio_screenshot_path))
+                    result.screenshot_aio_path = str(aio_screenshot_path)
+                except Exception:
+                    # Fallback: scroll into view and take full-page screenshot
+                    try:
+                        await aio_data["element"].scroll_into_view_if_needed()
+                        await page.screenshot(path=str(aio_screenshot_path), full_page=True)
+                        result.screenshot_aio_path = str(aio_screenshot_path)
+                    except Exception as e:
+                        logger.warning("Failed to screenshot AIO: %s", e)
 
             # Process citations
             is_cited, citation_pos = match_citations_to_target(
