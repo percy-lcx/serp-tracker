@@ -14,6 +14,7 @@ from ..config import (
     CAPTCHA_TIMEOUT,
     CRAWL_DELAY_MAX,
     CRAWL_DELAY_MIN,
+    HEADLESS,
     SCREENSHOT_DIR,
     USER_AGENT_LIST_PATH,
 )
@@ -311,7 +312,7 @@ async def execute_run(run_id: str, job_ids: list[str]):
             })
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(headless=HEADLESS)
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent=user_agent,
