@@ -282,7 +282,8 @@ export default function JobDetail() {
 }
 
 function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshotClick }) {
-  const fullScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page1') : null;
+  const page1ScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page1') : null;
+  const page2ScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page2') : null;
   const aioScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'aio') : null;
 
   return (
@@ -330,11 +331,26 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
         <td>
           {result.id ? (
             <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-              {fullScreenshotUrl && (
+              {page1ScreenshotUrl && (
                 <img
-                  src={fullScreenshotUrl}
-                  alt="Full screenshot"
-                  onClick={() => onScreenshotClick(fullScreenshotUrl)}
+                  src={page1ScreenshotUrl}
+                  alt="Page 1"
+                  onClick={() => onScreenshotClick(page1ScreenshotUrl)}
+                  style={{
+                    width: 48,
+                    height: 32,
+                    objectFit: 'cover',
+                    borderRadius: 4,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                  }}
+                />
+              )}
+              {page2ScreenshotUrl && (
+                <img
+                  src={page2ScreenshotUrl}
+                  alt="Page 2"
+                  onClick={() => onScreenshotClick(page2ScreenshotUrl)}
                   style={{
                     width: 48,
                     height: 32,
@@ -348,7 +364,7 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
               {aioScreenshotUrl && (
                 <img
                   src={aioScreenshotUrl}
-                  alt="AIO screenshot"
+                  alt="AIO"
                   onClick={() => onScreenshotClick(aioScreenshotUrl)}
                   style={{
                     width: 48,
@@ -424,6 +440,25 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                       {result.url}
                     </a>
                   </div>
+                </div>
+              )}
+              {result.debug_log && (
+                <div style={{ flexBasis: '100%' }}>
+                  <span className="text-sm text-muted">Debug Log</span>
+                  <pre style={{
+                    marginTop: 4,
+                    padding: '0.5rem',
+                    background: '#1a1a2e',
+                    color: '#e0e0e0',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    overflow: 'auto',
+                    maxHeight: 300,
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {result.debug_log}
+                  </pre>
                 </div>
               )}
             </div>

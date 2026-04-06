@@ -68,6 +68,7 @@ class TrackingResult(Base):
     screenshot_page2_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     screenshot_aio_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    debug_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     job: Mapped[TrackingJob] = relationship(back_populates="results")
     run: Mapped[TrackingRun] = relationship(back_populates="results")
