@@ -5,6 +5,110 @@ from playwright.async_api import Page
 
 logger = logging.getLogger(__name__)
 
+_JS_EXTRACT_ORGANIC = """
+() => {
+    const container = document.querySelector('#rso') || document.querySelector('#search');
+    if (!container) return [];
+
+    const featureSelectors = [
+        'g-section-with-header',
+        '[data-initq]',
+        '[data-md]',
+        '.kp-blk',
+        'g-accordion-expander',
+        '[data-attrid]',
+        'related-question-pair',
+        '[jscontroller][data-initq]',
+    ];
+
+    const h3s = container.querySelectorAll('h3');
+    const results = [];
+    const seenUrls = new Set();
+
+    for (const h3 of h3s) {
+        if (results.length >= 10) break;
+
+        // Skip h3 inside SERP feature containers
+        let insideFeature = false;
+        for (const sel of featureSelectors) {
+            if (h3.closest(sel)) {
+                insideFeature = true;
+                break;
+            }
+        }
+        if (insideFeature) continue;
+
+        // Find the associated link
+        let link = null;
+        // Check if h3 is inside an anchor
+        const parentAnchor = h3.closest('a[href]');
+        if (parentAnchor && parentAnchor.href.startsWith('http')) {
+            link = parentAnchor;
+        }
+        // Walk up to find a sibling or ancestor link
+        if (!link) {
+            let node = h3.parentElement;
+            for (let i = 0; i < 6 && node; i++) {
+                const a = node.querySelector('a[href^="http"]');
+                if (a && !a.href.startsWith('https://www.google.') &&
+                    !a.href.startsWith('https://google.') &&
+                    !a.href.startsWith('https://support.google.') &&
+                    !a.href.startsWith('https://maps.google.')) {
+                    link = a;
+                    break;
+                }
+                node = node.parentElement;
+            }
+        }
+
+        if (!link) continue;
+        const url = link.href;
+        if (!url || !url.startsWith('http')) continue;
+        if (url.startsWith('https://www.google.') || url.startsWith('https://google.')) continue;
+        if (seenUrls.has(url)) continue;
+        seenUrls.add(url);
+
+        const title = h3.innerText ? h3.innerText.trim() : '';
+        if (!title) continue;
+
+        // Find description: walk up to the result container and look for description elements
+        let desc = '';
+        let resultBlock = h3;
+        for (let i = 0; i < 8; i++) {
+            if (!resultBlock.parentElement) break;
+            resultBlock = resultBlock.parentElement;
+            // Stop at a reasonable container boundary
+            if (resultBlock.getAttribute('data-hveid') || resultBlock.classList.contains('g')) break;
+        }
+        const descSelectors = ['.VwiC3b', '[data-sncf]', '.IsZvec', "div[style*='-webkit-line-clamp']"];
+        for (const dSel of descSelectors) {
+            const dEl = resultBlock.querySelector(dSel);
+            if (dEl) {
+                const txt = dEl.innerText ? dEl.innerText.trim() : '';
+                if (txt && txt !== title) {
+                    desc = txt;
+                    break;
+                }
+            }
+        }
+
+        results.push({ url, title, description: desc });
+    }
+    return results;
+}
+"""
+
+
+async def _parse_organic_via_js(page) -> list[dict]:
+    """Extract organic results using in-browser JS evaluation."""
+    try:
+        raw = await page.evaluate(_JS_EXTRACT_ORGANIC)
+        if isinstance(raw, list):
+            return raw
+    except Exception as e:
+        logger.debug("JS organic extraction failed: %s", e)
+    return []
+
 
 async def _is_serp_feature(el) -> bool:
     """Return True if the element is a known non-organic SERP feature (PAA, Videos, etc.)."""
@@ -50,7 +154,23 @@ async def parse_organic_results(page: Page, page_number: int = 1) -> list[dict]:
     if not container_found:
         logger.warning("No search container found on page %d", page_number)
 
-    # Try multiple selector strategies for organic results
+    # Primary approach: JS evaluation for robust organic result extraction
+    js_raw = await _parse_organic_via_js(page)
+    if len(js_raw) >= 3:
+        for item in js_raw:
+            results.append({
+                "position": offset + len(results) + 1,
+                "url": item.get("url", ""),
+                "title": item.get("title", "").strip(),
+                "description": item.get("description", "").strip(),
+            })
+        logger.info("Parsed %d organic results via JS evaluation on page %d", len(results), page_number)
+        return results
+
+    logger.debug("JS evaluation returned %d results on page %d, falling back to CSS selectors",
+                 len(js_raw), page_number)
+
+    # Fallback: Try multiple selector strategies for organic results
     result_selectors = [
         # Standard selectors — exclude feature blocks and PAA containers
         "#rso .g:not(.g-blk):not([data-initq])",
