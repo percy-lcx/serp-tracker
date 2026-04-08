@@ -17,7 +17,7 @@ class JobUpdate(BaseModel):
     query: Optional[str] = None
     gl: Optional[str] = None
     hl: Optional[str] = None
-    is_active: Optional[bool] = None
+    is_active: Optional[bool] = Field(default=None, validation_alias="active")
 
 
 class JobResponse(BaseModel):
@@ -26,7 +26,7 @@ class JobResponse(BaseModel):
     query: str
     gl: str
     hl: str
-    is_active: bool
+    is_active: bool = Field(serialization_alias="active")
     created_at: datetime
     updated_at: datetime
     latest_position: Optional[int] = Field(default=None, serialization_alias="position")
