@@ -6,6 +6,28 @@ from playwright.async_api import Page
 logger = logging.getLogger(__name__)
 
 
+async def _is_serp_feature(el) -> bool:
+    """Return True if the element is a known non-organic SERP feature (PAA, Videos, etc.)."""
+    try:
+        # People Also Ask containers
+        if await el.locator("[data-initq]").count() > 0:
+            return True
+        if await el.locator("related-question-pair").count() > 0:
+            return True
+
+        # Check class for block-level features
+        class_attr = await el.get_attribute("class") or ""
+        if "g-blk" in class_attr:
+            return True
+
+        # Video carousel / Top Stories / other sectioned features
+        if await el.locator("xpath=ancestor::g-section-with-header").count() > 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 async def parse_organic_results(page: Page, page_number: int = 1) -> list[dict]:
     """Parse organic search results from a Google SERP page.
 
@@ -30,9 +52,9 @@ async def parse_organic_results(page: Page, page_number: int = 1) -> list[dict]:
 
     # Try multiple selector strategies for organic results
     result_selectors = [
-        # Standard selectors
-        "#search .g:not(.g-blk)",
-        "#rso .g:not(.g-blk)",
+        # Standard selectors — exclude feature blocks and PAA containers
+        "#rso .g:not(.g-blk):not([data-initq])",
+        "#search .g:not(.g-blk):not([data-initq])",
         "#rso > div > div.g",
         "#rso div[data-hveid] .g",
         # Broader fallbacks — modern Google layouts
@@ -67,9 +89,21 @@ async def parse_organic_results(page: Page, page_number: int = 1) -> list[dict]:
         return results
 
     count = await elements.count()
-    for i in range(min(count, 10)):
+    max_results = 10
+    max_scan = min(count, 50)
+    scanned = 0
+
+    for i in range(max_scan):
+        if len(results) >= max_results:
+            break
+        scanned = i + 1
         try:
             el = elements.nth(i)
+
+            # Skip known SERP features (PAA, Videos, etc.)
+            if await _is_serp_feature(el):
+                logger.debug("Skipping SERP feature element at index %d on page %d", i, page_number)
+                continue
 
             # Extract URL
             link = el.locator("a[href]").first
@@ -119,6 +153,6 @@ async def parse_organic_results(page: Page, page_number: int = 1) -> list[dict]:
             logger.debug("Error parsing result %d on page %d: %s", i, page_number, e)
             continue
 
-    logger.info("Parsed %d organic results on page %d (selector: %s)",
-                len(results), page_number, matched_selector)
+    logger.info("Parsed %d organic results from %d candidates (scanned %d) on page %d (selector: %s)",
+                len(results), count, scanned, page_number, matched_selector)
     return results
