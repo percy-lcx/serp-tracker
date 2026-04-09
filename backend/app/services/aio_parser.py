@@ -8,7 +8,7 @@ from typing import Optional, Tuple, List
 
 from playwright.async_api import Page
 
-from ..config import AIO_SELECTORS_PATH
+from ..config import AIO_SELECTORS_PATH, AIO_DEBUG_DUMP
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ def load_selectors() -> dict:
     return {
         "aio_container_selectors": ["div.wDYxhc[data-md]"],
         "aio_citation_selectors": ["div.wDYxhc a[href]"],
+        "aio_card_citation_selectors": [],
         "aio_content_selectors": ["div.wDYxhc[data-md] span"],
     }
 
@@ -83,6 +84,251 @@ async def _find_aio_by_text(page: Page) -> Optional[object]:
     return None
 
 
+async def _dump_aio_region_html(page: Page, aio_element) -> Optional[str]:
+    """Capture HTML of the broader AIO region for selector development.
+
+    Only runs when AIO_DEBUG_DUMP is enabled. Walks up from the AIO element
+    to a broader parent and dumps its inner HTML.
+    """
+    if not AIO_DEBUG_DUMP:
+        return None
+
+    try:
+        # Try to get a broader parent that encompasses both AIO text and side cards
+        for ancestor_sel in [
+            "xpath=./ancestor::div[@jscontroller]",
+            "xpath=./ancestor::div[contains(@class, 'M8OgIe')]",
+            "xpath=./ancestor::div[@data-md]",
+        ]:
+            try:
+                ancestor = aio_element.locator(ancestor_sel).last
+                if await ancestor.count() > 0:
+                    html = await ancestor.inner_html()
+                    logger.info(
+                        "AIO region HTML dump (%s, %d chars):\n%s",
+                        ancestor_sel, len(html), html[:5000],
+                    )
+                    return html
+            except Exception:
+                continue
+
+        # Fallback: walk up 3 parent levels
+        current = aio_element
+        for _ in range(3):
+            try:
+                current = current.locator("xpath=./parent::div").first
+                if await current.count() == 0:
+                    break
+            except Exception:
+                break
+
+        html = await current.inner_html()
+        logger.info("AIO region HTML dump (parent walk, %d chars):\n%s", len(html), html[:5000])
+        return html
+    except Exception as e:
+        logger.debug("AIO region HTML dump failed: %s", e)
+        return None
+
+
+async def _extract_inline_citations(aio_element, page: Page, selectors: dict) -> Tuple[List[dict], dict]:
+    """Extract inline citations from within the AIO text content.
+
+    Returns (citations, debug_info) where each citation has a 'type' key set to 'inline'.
+    """
+    citations = []
+    debug_info = {
+        "citation_selector_matched": None,
+        "citation_fallback_used": False,
+    }
+
+    # Try specific selectors scoped within the AIO element
+    for selector in selectors.get("aio_citation_selectors", []):
+        try:
+            links = aio_element.locator(selector)
+            count = await links.count()
+            scope = "element"
+            if count == 0:
+                links = page.locator(selector)
+                count = await links.count()
+                scope = "page"
+            if count > 0:
+                for i in range(count):
+                    link = links.nth(i)
+                    href = await link.get_attribute("href")
+                    title = await link.inner_text()
+                    if href and href.startswith("http") and "google.com" not in href:
+                        citations.append({
+                            "url": href,
+                            "title": title.strip() if title else None,
+                            "type": "inline",
+                        })
+                if citations:
+                    debug_info["citation_selector_matched"] = f"{selector} ({scope}-scoped, {count} links)"
+                    break
+        except Exception:
+            continue
+
+    # Fallback: find all links within the AIO element generically
+    if not citations:
+        debug_info["citation_fallback_used"] = True
+        try:
+            links = aio_element.locator("a[href]")
+            count = await links.count()
+            for i in range(count):
+                link = links.nth(i)
+                href = await link.get_attribute("href")
+                title = await link.inner_text()
+                if href and href.startswith("http") and "google.com" not in href:
+                    citations.append({
+                        "url": href,
+                        "title": title.strip() if title else None,
+                        "type": "inline",
+                    })
+        except Exception:
+            pass
+
+    return citations, debug_info
+
+
+async def _extract_card_citations(aio_element, page: Page, selectors: dict) -> Tuple[List[dict], dict]:
+    """Extract right-side card citations from the AIO region.
+
+    These are thumbnail/preview cards displayed alongside the AIO text.
+    Searches progressively broader scopes since cards may be siblings of the AIO element.
+    Returns (citations, debug_info) where each citation has a 'type' key set to 'card'.
+    """
+    card_selectors = selectors.get("aio_card_citation_selectors", [])
+    if not card_selectors:
+        return [], {"card_citation_selector_matched": None, "card_citations_found": 0}
+
+    citations = []
+    debug_info = {
+        "card_citation_selector_matched": None,
+        "card_citations_found": 0,
+    }
+
+    # Build a list of scopes to search, from narrowest to broadest
+    scopes = []
+
+    # Scope 1: Within the AIO element itself
+    scopes.append(("aio_element", aio_element))
+
+    # Scope 2: Parent of the AIO element (cards may be siblings)
+    try:
+        parent = aio_element.locator("xpath=./parent::div").first
+        if await parent.count() > 0:
+            scopes.append(("parent", parent))
+    except Exception:
+        pass
+
+    # Scope 3: Broader ancestor with jscontroller (likely the full AIO widget)
+    try:
+        ancestor = aio_element.locator("xpath=./ancestor::div[@jscontroller]").last
+        if await ancestor.count() > 0:
+            scopes.append(("jscontroller_ancestor", ancestor))
+    except Exception:
+        pass
+
+    for scope_name, scope_el in scopes:
+        for selector in card_selectors:
+            try:
+                links = scope_el.locator(selector)
+                count = await links.count()
+                if count == 0:
+                    continue
+                for i in range(count):
+                    link = links.nth(i)
+                    href = await link.get_attribute("href")
+                    title = await link.inner_text()
+                    if href and href.startswith("http") and "google.com" not in href:
+                        citations.append({
+                            "url": href,
+                            "title": title.strip() if title else None,
+                            "type": "card",
+                        })
+                if citations:
+                    debug_info["card_citation_selector_matched"] = (
+                        f"{selector} ({scope_name}-scoped, {count} links)"
+                    )
+                    debug_info["card_citations_found"] = len(citations)
+                    return citations, debug_info
+            except Exception:
+                continue
+
+    # Final fallback: page-level search with bounding-box proximity check
+    aio_box = None
+    try:
+        aio_box = await aio_element.bounding_box()
+    except Exception:
+        pass
+
+    if aio_box:
+        for selector in card_selectors:
+            try:
+                links = page.locator(selector)
+                count = await links.count()
+                if count == 0:
+                    continue
+                for i in range(count):
+                    link = links.nth(i)
+                    link_box = await link.bounding_box()
+                    if not link_box:
+                        continue
+                    # Accept links that are near the AIO element:
+                    # horizontally within 50px left or to the right,
+                    # vertically within the AIO height + 100px margin
+                    x_near = link_box["x"] >= aio_box["x"] - 50
+                    y_near = link_box["y"] <= aio_box["y"] + aio_box["height"] + 100
+                    y_not_above = link_box["y"] >= aio_box["y"] - 50
+                    if x_near and y_near and y_not_above:
+                        href = await link.get_attribute("href")
+                        title = await link.inner_text()
+                        if href and href.startswith("http") and "google.com" not in href:
+                            citations.append({
+                                "url": href,
+                                "title": title.strip() if title else None,
+                                "type": "card",
+                            })
+                if citations:
+                    debug_info["card_citation_selector_matched"] = (
+                        f"{selector} (page-scoped+proximity, {count} links)"
+                    )
+                    break
+            except Exception:
+                continue
+
+    debug_info["card_citations_found"] = len(citations)
+    return citations, debug_info
+
+
+def _merge_and_deduplicate(inline_citations: List[dict], card_citations: List[dict]) -> List[dict]:
+    """Merge inline and card citations, deduplicating by normalized URL.
+
+    If a URL appears in both inline and card lists, it is kept once with type 'inline+card'.
+    Inline citations come first, preserving their original order.
+    """
+    seen = {}  # normalized_url -> index in result list
+    result = []
+
+    for c in inline_citations:
+        normalized = normalize_url(c["url"])
+        if normalized not in seen:
+            seen[normalized] = len(result)
+            result.append(c)
+
+    for c in card_citations:
+        normalized = normalize_url(c["url"])
+        if normalized in seen:
+            # URL already exists from inline — upgrade type to inline+card
+            idx = seen[normalized]
+            result[idx]["type"] = "inline+card"
+        else:
+            seen[normalized] = len(result)
+            result.append(c)
+
+    return result
+
+
 async def detect_aio(page: Page) -> dict:
     """Detect and extract AI Overview content and citations from a SERP page.
 
@@ -97,6 +343,8 @@ async def detect_aio(page: Page) -> dict:
         "citation_selector_matched": None,
         "citation_fallback_used": False,
         "citations_found": 0,
+        "card_citation_selector_matched": None,
+        "card_citations_found": 0,
         "selector_errors": [],
         "detection_method": None,
     }
@@ -135,6 +383,9 @@ async def detect_aio(page: Page) -> dict:
         logger.info("AIO not found after CSS selectors + text fallback")
         return no_aio
 
+    # Optional: dump broader AIO region HTML for selector development
+    await _dump_aio_region_html(page, aio_element)
+
     # Extract content from AIO element
     content = ""
     try:
@@ -144,62 +395,18 @@ async def detect_aio(page: Page) -> dict:
         content = ""
     debug["content_length"] = len(content.strip())
 
-    # Extract citations
-    citations = []
+    # Extract inline citations (links within the AIO text)
+    inline_citations, inline_debug = await _extract_inline_citations(aio_element, page, selectors)
+    debug["citation_selector_matched"] = inline_debug["citation_selector_matched"]
+    debug["citation_fallback_used"] = inline_debug["citation_fallback_used"]
 
-    # Try specific selectors scoped within the AIO element
-    for selector in selectors["aio_citation_selectors"]:
-        try:
-            links = aio_element.locator(selector)
-            count = await links.count()
-            scope = "element"
-            if count == 0:
-                links = page.locator(selector)
-                count = await links.count()
-                scope = "page"
-            if count > 0:
-                for i in range(count):
-                    link = links.nth(i)
-                    href = await link.get_attribute("href")
-                    title = await link.inner_text()
-                    if href and href.startswith("http") and "google.com" not in href:
-                        citations.append({
-                            "url": href,
-                            "title": title.strip() if title else None,
-                        })
-                if citations:
-                    debug["citation_selector_matched"] = f"{selector} ({scope}-scoped, {count} links)"
-                    break
-        except Exception:
-            continue
+    # Extract right-side card citations (thumbnail/preview cards)
+    card_citations, card_debug = await _extract_card_citations(aio_element, page, selectors)
+    debug["card_citation_selector_matched"] = card_debug["card_citation_selector_matched"]
+    debug["card_citations_found"] = card_debug["card_citations_found"]
 
-    # Fallback: find all links within the AIO element generically
-    if not citations:
-        debug["citation_fallback_used"] = True
-        try:
-            links = aio_element.locator("a[href]")
-            count = await links.count()
-            for i in range(count):
-                link = links.nth(i)
-                href = await link.get_attribute("href")
-                title = await link.inner_text()
-                if href and href.startswith("http") and "google.com" not in href:
-                    citations.append({
-                        "url": href,
-                        "title": title.strip() if title else None,
-                    })
-        except Exception:
-            pass
-
-    # Deduplicate citations by URL
-    seen = set()
-    unique_citations = []
-    for c in citations:
-        normalized = normalize_url(c["url"])
-        if normalized not in seen:
-            seen.add(normalized)
-            unique_citations.append(c)
-
+    # Merge and deduplicate
+    unique_citations = _merge_and_deduplicate(inline_citations, card_citations)
     debug["citations_found"] = len(unique_citations)
 
     return {

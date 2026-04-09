@@ -100,5 +100,6 @@ class AioCitation(Base):
     cited_url: Mapped[str] = mapped_column(Text, nullable=False)
     cited_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_target: Mapped[bool] = mapped_column(Boolean, default=False)
+    citation_type: Mapped[str] = mapped_column(String(20), default="inline")
 
     result: Mapped[TrackingResult] = relationship(back_populates="aio_citations")

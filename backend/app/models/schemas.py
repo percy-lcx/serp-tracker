@@ -69,6 +69,7 @@ class AioCitationResponse(BaseModel):
     cited_url: str
     cited_title: Optional[str]
     is_target: bool
+    citation_type: str = "inline"
 
     model_config = {"from_attributes": True}
 
