@@ -34,7 +34,7 @@ async def init_db():
         def _add_missing_columns(connection):
             inspector = sa_inspect(connection)
             for table_name, columns_to_add in [
-                ("tracking_results", [("debug_log", "TEXT")]),
+                ("tracking_results", [("debug_log", "TEXT"), ("aio_citation_url", "TEXT")]),
             ]:
                 if not inspector.has_table(table_name):
                     continue

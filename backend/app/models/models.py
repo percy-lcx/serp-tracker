@@ -63,6 +63,7 @@ class TrackingResult(Base):
     aio_present: Mapped[bool] = mapped_column(Boolean, default=False)
     aio_url_cited: Mapped[bool] = mapped_column(Boolean, default=False)
     aio_citation_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    aio_citation_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     aio_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     screenshot_page1_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     screenshot_page2_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

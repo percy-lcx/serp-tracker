@@ -340,7 +340,14 @@ async def _crawl_single_job(
             )
             result.aio_url_cited = is_cited
             result.aio_citation_position = citation_pos
-            await _debug(f"AIO target match: cited={is_cited}, citation_position={citation_pos}")
+            if is_cited and citation_pos is not None:
+                # Store the actual cited URL for debugging
+                target_norm = normalize_url(job.target_url)
+                for cit in aio_data["citations"]:
+                    if normalize_url(cit["url"]) == target_norm:
+                        result.aio_citation_url = cit["url"]
+                        break
+            await _debug(f"AIO target match: cited={is_cited}, citation_position={citation_pos}, url={result.aio_citation_url}")
 
             # Save citation records
             for i, cit in enumerate(aio_data["citations"]):

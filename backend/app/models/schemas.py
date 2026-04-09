@@ -32,8 +32,10 @@ class JobResponse(BaseModel):
     latest_position: Optional[int] = Field(default=None, serialization_alias="position")
     previous_position: Optional[int] = None
     position_change: Optional[int] = None
+    latest_result_url: Optional[str] = None
     latest_aio_present: Optional[bool] = None
     latest_aio_url_cited: Optional[bool] = Field(default=None, serialization_alias="aio_cited")
+    latest_aio_citation_url: Optional[str] = None
     last_checked: Optional[datetime] = None
 
     @computed_field
@@ -74,6 +76,7 @@ class ResultResponse(BaseModel):
     aio_present: bool = False
     aio_url_cited: bool = Field(default=False, serialization_alias="aio_cited")
     aio_citation_position: Optional[int] = Field(default=None, serialization_alias="aio_position")
+    aio_citation_url: Optional[str] = None
     aio_content: Optional[str] = None
     screenshot_page1_path: Optional[str] = None
     screenshot_page2_path: Optional[str] = None
@@ -92,8 +95,10 @@ class ResultBrief(BaseModel):
     checked_at: datetime
     organic_position: Optional[int] = Field(default=None, serialization_alias="position")
     organic_page: Optional[int] = None
+    result_url: Optional[str] = None
     aio_present: bool = False
     aio_url_cited: bool = Field(default=False, serialization_alias="aio_cited")
+    aio_citation_url: Optional[str] = None
     error: Optional[str] = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}

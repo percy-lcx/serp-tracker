@@ -298,7 +298,14 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
         <td>{formatDate(result.created_at || result.checked_at)}</td>
         <td>
           {result.position != null ? (
-            <span style={{ fontWeight: 600 }}>{result.position}</span>
+            <div>
+              <span style={{ fontWeight: 600 }}>{result.position}</span>
+              {result.result_url && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
+                  {result.result_url}
+                </div>
+              )}
+            </div>
           ) : (
             <span className="text-muted">-</span>
           )}
@@ -432,12 +439,22 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                   </div>
                 </div>
               )}
-              {result.url && (
+              {result.result_url && (
                 <div style={{ flexBasis: '100%' }}>
-                  <span className="text-sm text-muted">Result URL</span>
+                  <span className="text-sm text-muted">Ranking URL</span>
                   <div style={{ marginTop: 2, wordBreak: 'break-all' }}>
-                    <a href={result.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
-                      {result.url}
+                    <a href={result.result_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
+                      {result.result_url}
+                    </a>
+                  </div>
+                </div>
+              )}
+              {result.aio_citation_url && (
+                <div style={{ flexBasis: '100%' }}>
+                  <span className="text-sm text-muted">AIO Citation URL</span>
+                  <div style={{ marginTop: 2, wordBreak: 'break-all' }}>
+                    <a href={result.aio_citation_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
+                      {result.aio_citation_url}
                     </a>
                   </div>
                 </div>
