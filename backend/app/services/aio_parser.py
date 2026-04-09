@@ -84,6 +84,111 @@ async def _find_aio_by_text(page: Page) -> Optional[object]:
     return None
 
 
+async def _expand_aio(page: Page, aio_element, selectors: dict) -> dict:
+    """Click 'Show more' and 'Show all' buttons to fully expand the AIO content and cards.
+
+    Google's AI Overview often truncates the main text behind a 'Show more' button
+    and hides additional right-side card citations behind a 'Show all' button.
+    This function clicks both to reveal all content before extraction.
+
+    Returns a debug dict with what was expanded.
+    """
+    expand_debug = {
+        "show_more_clicked": False,
+        "show_more_selector": None,
+        "show_all_clicked": False,
+        "show_all_selector": None,
+    }
+
+    # --- Step 1: Click "Show more" to expand the AIO text ---
+    show_more_selectors = selectors.get("aio_expand_button_selectors", [])
+
+    # Search within the AIO element first, then broaden to parent/page
+    search_scopes = [("aio_element", aio_element)]
+    try:
+        parent = aio_element.locator("xpath=./parent::div").first
+        if await parent.count() > 0:
+            search_scopes.append(("parent", parent))
+    except Exception:
+        pass
+    try:
+        ancestor = aio_element.locator("xpath=./ancestor::div[@jscontroller]").last
+        if await ancestor.count() > 0:
+            search_scopes.append(("ancestor", ancestor))
+    except Exception:
+        pass
+
+    for scope_name, scope_el in search_scopes:
+        if expand_debug["show_more_clicked"]:
+            break
+        # Try CSS selectors from config
+        for selector in show_more_selectors:
+            try:
+                btn = scope_el.locator(selector).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    await page.wait_for_timeout(800)
+                    expand_debug["show_more_clicked"] = True
+                    expand_debug["show_more_selector"] = f"{selector} ({scope_name})"
+                    logger.info("AIO 'Show more' clicked via %s (%s)", selector, scope_name)
+                    break
+            except Exception as e:
+                logger.debug("Show more selector %s failed in %s: %s", selector, scope_name, e)
+                continue
+
+        # Also try text-based detection for "Show more"
+        if not expand_debug["show_more_clicked"]:
+            for text in ["Show more", "Show More"]:
+                try:
+                    btn = scope_el.get_by_text(text, exact=True).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click()
+                        await page.wait_for_timeout(800)
+                        expand_debug["show_more_clicked"] = True
+                        expand_debug["show_more_selector"] = f"text:'{text}' ({scope_name})"
+                        logger.info("AIO 'Show more' clicked via text '%s' (%s)", text, scope_name)
+                        break
+                except Exception:
+                    continue
+
+    # --- Step 2: Click "Show all" to expand the right-side card list ---
+    show_all_selectors = selectors.get("aio_show_all_button_selectors", [])
+
+    for scope_name, scope_el in search_scopes:
+        if expand_debug["show_all_clicked"]:
+            break
+        for selector in show_all_selectors:
+            try:
+                btn = scope_el.locator(selector).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    await page.wait_for_timeout(800)
+                    expand_debug["show_all_clicked"] = True
+                    expand_debug["show_all_selector"] = f"{selector} ({scope_name})"
+                    logger.info("AIO 'Show all' clicked via %s (%s)", selector, scope_name)
+                    break
+            except Exception as e:
+                logger.debug("Show all selector %s failed in %s: %s", selector, scope_name, e)
+                continue
+
+        # Text-based detection for "Show all"
+        if not expand_debug["show_all_clicked"]:
+            for text in ["Show all", "Show All"]:
+                try:
+                    btn = scope_el.get_by_text(text, exact=True).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click()
+                        await page.wait_for_timeout(800)
+                        expand_debug["show_all_clicked"] = True
+                        expand_debug["show_all_selector"] = f"text:'{text}' ({scope_name})"
+                        logger.info("AIO 'Show all' clicked via text '%s' (%s)", text, scope_name)
+                        break
+                except Exception:
+                    continue
+
+    return expand_debug
+
+
 async def _dump_aio_region_html(page: Page, aio_element) -> Optional[str]:
     """Capture HTML of the broader AIO region for selector development.
 
@@ -345,6 +450,8 @@ async def detect_aio(page: Page) -> dict:
         "citations_found": 0,
         "card_citation_selector_matched": None,
         "card_citations_found": 0,
+        "show_more_clicked": False,
+        "show_all_clicked": False,
         "selector_errors": [],
         "detection_method": None,
     }
@@ -382,6 +489,15 @@ async def detect_aio(page: Page) -> dict:
     if aio_element is None:
         logger.info("AIO not found after CSS selectors + text fallback")
         return no_aio
+
+    # Expand the AIO: click "Show more" and "Show all" to reveal full content and cards
+    expand_debug = await _expand_aio(page, aio_element, selectors)
+    debug["show_more_clicked"] = expand_debug["show_more_clicked"]
+    debug["show_all_clicked"] = expand_debug["show_all_clicked"]
+    if expand_debug.get("show_more_selector"):
+        debug["show_more_selector"] = expand_debug["show_more_selector"]
+    if expand_debug.get("show_all_selector"):
+        debug["show_all_selector"] = expand_debug["show_all_selector"]
 
     # Optional: dump broader AIO region HTML for selector development
     await _dump_aio_region_html(page, aio_element)

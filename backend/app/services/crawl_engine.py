@@ -308,6 +308,12 @@ async def _crawl_single_job(
                 f"content: {aio_debug.get('content_length', 0)} chars, "
                 f"citations: {aio_debug.get('citations_found', 0)}"
             )
+            # Log expand actions
+            if aio_debug.get("show_more_clicked"):
+                await _debug(f"AIO expanded via 'Show more': {aio_debug.get('show_more_selector', '?')}")
+            if aio_debug.get("show_all_clicked"):
+                await _debug(f"AIO cards expanded via 'Show all': {aio_debug.get('show_all_selector', '?')}")
+
             if aio_debug.get("citation_selector_matched"):
                 await _debug(f"AIO inline citations matched via: {aio_debug['citation_selector_matched']}")
             elif aio_debug.get("citation_fallback_used"):
