@@ -74,6 +74,21 @@ class TrackingResult(Base):
     job: Mapped[TrackingJob] = relationship(back_populates="results")
     run: Mapped[TrackingRun] = relationship(back_populates="results")
     aio_citations: Mapped[List[AioCitation]] = relationship(back_populates="result", cascade="all, delete-orphan")
+    organic_results: Mapped[List[OrganicResult]] = relationship(back_populates="result", cascade="all, delete-orphan")
+
+
+class OrganicResult(Base):
+    __tablename__ = "organic_results"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    result_id: Mapped[str] = mapped_column(String(36), ForeignKey("tracking_results.id", ondelete="CASCADE"))
+    position: Mapped[int] = mapped_column(Integer)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_target: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    result: Mapped[TrackingResult] = relationship(back_populates="organic_results")
 
 
 class AioCitation(Base):

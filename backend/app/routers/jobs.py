@@ -127,7 +127,7 @@ async def get_job_results(
     stmt = (
         select(TrackingResult)
         .where(TrackingResult.job_id == job_id)
-        .options(selectinload(TrackingResult.aio_citations))
+        .options(selectinload(TrackingResult.aio_citations), selectinload(TrackingResult.organic_results))
         .order_by(desc(TrackingResult.checked_at))
         .limit(limit)
         .offset(offset)

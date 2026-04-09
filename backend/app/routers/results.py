@@ -19,7 +19,7 @@ async def get_result(result_id: str, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(TrackingResult)
         .where(TrackingResult.id == result_id)
-        .options(selectinload(TrackingResult.aio_citations))
+        .options(selectinload(TrackingResult.aio_citations), selectinload(TrackingResult.organic_results))
     )
     result = await db.execute(stmt)
     tracking_result = result.scalar_one_or_none()

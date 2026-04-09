@@ -439,23 +439,87 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                   </div>
                 </div>
               )}
-              {result.result_url && (
+              {result.organic_results && result.organic_results.length > 0 && (
                 <div style={{ flexBasis: '100%' }}>
-                  <span className="text-sm text-muted">Ranking URL</span>
-                  <div style={{ marginTop: 2, wordBreak: 'break-all' }}>
-                    <a href={result.result_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
-                      {result.result_url}
-                    </a>
+                  <span className="text-sm text-muted">Organic Results ({result.organic_results.length})</span>
+                  <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6 }}>
+                    {result.organic_results
+                      .sort((a, b) => a.position - b.position)
+                      .map((org) => (
+                        <div
+                          key={org.id}
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            alignItems: 'baseline',
+                            padding: '2px 0',
+                            background: org.is_target ? 'rgba(34,197,94,0.1)' : 'transparent',
+                            borderRadius: 4,
+                            paddingLeft: 4,
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
+                            {org.position}.
+                          </span>
+                          <a
+                            href={org.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: org.is_target ? 'var(--success)' : 'var(--primary)',
+                              wordBreak: 'break-all',
+                              fontWeight: org.is_target ? 600 : 400,
+                            }}
+                          >
+                            {org.url}
+                          </a>
+                          {org.is_target && (
+                            <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
-              {result.aio_citation_url && (
+              {result.aio_citations && result.aio_citations.length > 0 && (
                 <div style={{ flexBasis: '100%' }}>
-                  <span className="text-sm text-muted">AIO Citation URL</span>
-                  <div style={{ marginTop: 2, wordBreak: 'break-all' }}>
-                    <a href={result.aio_citation_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
-                      {result.aio_citation_url}
-                    </a>
+                  <span className="text-sm text-muted">AIO Citations ({result.aio_citations.length})</span>
+                  <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6 }}>
+                    {result.aio_citations
+                      .sort((a, b) => a.position - b.position)
+                      .map((cit) => (
+                        <div
+                          key={cit.id}
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            alignItems: 'baseline',
+                            padding: '2px 0',
+                            background: cit.is_target ? 'rgba(34,197,94,0.1)' : 'transparent',
+                            borderRadius: 4,
+                            paddingLeft: 4,
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
+                            {cit.position}.
+                          </span>
+                          <a
+                            href={cit.cited_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: cit.is_target ? 'var(--success)' : 'var(--primary)',
+                              wordBreak: 'break-all',
+                              fontWeight: cit.is_target ? 600 : 400,
+                            }}
+                          >
+                            {cit.cited_url}
+                          </a>
+                          {cit.is_target && (
+                            <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}

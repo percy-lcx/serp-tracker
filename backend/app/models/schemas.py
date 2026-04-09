@@ -52,6 +52,17 @@ class JobResponse(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
+class OrganicResultResponse(BaseModel):
+    id: str
+    position: int
+    url: str
+    title: Optional[str]
+    description: Optional[str]
+    is_target: bool
+
+    model_config = {"from_attributes": True}
+
+
 class AioCitationResponse(BaseModel):
     id: str
     position: int
@@ -84,6 +95,7 @@ class ResultResponse(BaseModel):
     error: Optional[str] = None
     debug_log: Optional[str] = None
     aio_citations: List[AioCitationResponse] = []
+    organic_results: List[OrganicResultResponse] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
