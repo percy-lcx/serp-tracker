@@ -251,8 +251,26 @@ function Dashboard() {
                     {job.target_url}
                   </td>
                   <td>{job.gl || '—'} / {job.hl || '—'}</td>
-                  <td>{renderPositionChange(job)}</td>
-                  <td>{renderAioBadge(job.aio_status)}</td>
+                  <td>
+                    <div>
+                      {renderPositionChange(job)}
+                      {job.latest_result_url && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 220, lineHeight: 1.3, marginTop: 2 }}>
+                          {job.latest_result_url}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      {renderAioBadge(job.aio_status)}
+                      {job.latest_aio_citation_url && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 220, lineHeight: 1.3, marginTop: 2 }}>
+                          {job.latest_aio_citation_url}
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td>{formatDate(job.last_checked)}</td>
                 </tr>
               ))}

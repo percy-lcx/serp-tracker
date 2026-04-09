@@ -31,8 +31,10 @@ async def _enrich_job(job: TrackingJob, db: AsyncSession) -> JobResponse:
     if recent:
         latest = recent[0]
         response.latest_position = latest.organic_position
+        response.latest_result_url = latest.result_url
         response.latest_aio_present = latest.aio_present
         response.latest_aio_url_cited = latest.aio_url_cited
+        response.latest_aio_citation_url = latest.aio_citation_url
         response.last_checked = latest.checked_at
 
         if len(recent) > 1 and latest.organic_position and recent[1].organic_position:
