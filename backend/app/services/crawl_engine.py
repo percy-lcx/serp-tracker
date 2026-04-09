@@ -309,9 +309,14 @@ async def _crawl_single_job(
                 f"citations: {aio_debug.get('citations_found', 0)}"
             )
             if aio_debug.get("citation_selector_matched"):
-                await _debug(f"AIO citations matched via: {aio_debug['citation_selector_matched']}")
+                await _debug(f"AIO inline citations matched via: {aio_debug['citation_selector_matched']}")
             elif aio_debug.get("citation_fallback_used"):
-                await _debug("AIO citations: used generic a[href] fallback")
+                await _debug("AIO inline citations: used generic a[href] fallback")
+            if aio_debug.get("card_citation_selector_matched"):
+                await _debug(
+                    f"AIO card citations matched via: {aio_debug['card_citation_selector_matched']} "
+                    f"({aio_debug.get('card_citations_found', 0)} found)"
+                )
 
             result.aio_present = True
             result.aio_content = aio_data["content"]
@@ -357,6 +362,7 @@ async def _crawl_single_job(
                     cited_url=cit["url"],
                     cited_title=cit.get("title"),
                     is_target=normalize_url(cit["url"]) == normalize_url(job.target_url),
+                    citation_type=cit.get("type", "inline"),
                 )
                 result.aio_citations.append(aio_cit)
         else:

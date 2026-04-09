@@ -19,6 +19,15 @@
     "a.KEVENd",
     "a[jsname='UWckNb']"
   ],
+  "aio_card_citation_selectors": [
+    ".kno-fb-ctx a[href]",
+    ".GqKvW a[href]",
+    ".Wt5Tfe a[href]",
+    ".VkpGBb a[href]",
+    "g-card-section a[href]",
+    ".kp-hc a[href]",
+    ".ruTcId a[href]"
+  ],
   "aio_content_selectors": [
     ".aiO-section",
     ".XbbXmb",

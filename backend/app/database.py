@@ -35,6 +35,7 @@ async def init_db():
             inspector = sa_inspect(connection)
             for table_name, columns_to_add in [
                 ("tracking_results", [("debug_log", "TEXT"), ("aio_citation_url", "TEXT")]),
+                ("aio_citations", [("citation_type", "VARCHAR(20) DEFAULT 'inline'")]),
             ]:
                 if not inspector.has_table(table_name):
                     continue

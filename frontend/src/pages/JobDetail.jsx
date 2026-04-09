@@ -518,6 +518,11 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                           {cit.is_target && (
                             <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
                           )}
+                          {cit.citation_type && cit.citation_type !== 'inline' && (
+                            <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.15)', color: 'var(--primary)' }}>
+                              {cit.citation_type}
+                            </span>
+                          )}
                         </div>
                       ))}
                   </div>
