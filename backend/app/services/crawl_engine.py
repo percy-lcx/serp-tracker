@@ -20,7 +20,7 @@ from ..config import (
     USER_AGENT_LIST_PATH,
 )
 from ..database import async_session
-from ..models.models import AioCitation, TrackingJob, TrackingResult, TrackingRun
+from ..models.models import AioCitation, OrganicResult, TrackingJob, TrackingResult, TrackingRun
 from .aio_parser import detect_aio, match_citations_to_target, normalize_url
 from .serp_parser import parse_organic_results
 
@@ -408,19 +408,30 @@ async def _crawl_single_job(
         target_normalized = normalize_url(job.target_url)
         found = False
         for r in all_results:
-            if normalize_url(r["url"]) == target_normalized:
+            is_target = normalize_url(r["url"]) == target_normalized
+            if is_target and not found:
                 result.organic_position = r["position"]
                 result.organic_page = 1 if r["position"] <= 10 else 2
                 result.result_url = r["url"]
                 result.result_title = r["title"]
                 result.result_description = r["description"]
                 found = True
-                break
+            # Save every organic result for debugging
+            organic_rec = OrganicResult(
+                result_id=result.id,
+                position=r["position"],
+                url=r["url"],
+                title=r.get("title"),
+                description=r.get("description"),
+                is_target=is_target,
+            )
+            result.organic_results.append(organic_rec)
 
         if found:
             await _debug(f"Target found: position={result.organic_position}, page={result.organic_page}")
         else:
             await _debug(f"Target URL not found in {len(all_results)} results (target: {job.target_url})")
+        await _debug(f"Saved {len(result.organic_results)} organic result URLs")
 
     except Exception as e:
         logger.error("Error crawling job %s: %s", job.id, e)
