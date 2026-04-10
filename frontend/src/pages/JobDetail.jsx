@@ -300,6 +300,11 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
           {result.position != null ? (
             <div>
               <span style={{ fontWeight: 600 }}>{result.position}</span>
+              {result.result_title && (
+                <div style={{ fontSize: 11, color: 'var(--text)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
+                  {result.result_title}
+                </div>
+              )}
               {result.result_url && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
                   {result.result_url}
@@ -461,18 +466,25 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                           <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
                             {org.position}.
                           </span>
-                          <a
-                            href={org.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              color: org.is_target ? 'var(--success)' : 'var(--primary)',
-                              wordBreak: 'break-all',
-                              fontWeight: org.is_target ? 600 : 400,
-                            }}
-                          >
-                            {org.url}
-                          </a>
+                          <div style={{ minWidth: 0 }}>
+                            <a
+                              href={org.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                color: org.is_target ? 'var(--success)' : 'var(--primary)',
+                                wordBreak: 'break-all',
+                                fontWeight: org.is_target ? 600 : 400,
+                              }}
+                            >
+                              {org.title || org.url}
+                            </a>
+                            {org.title && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
+                                {org.url}
+                              </div>
+                            )}
+                          </div>
                           {org.is_target && (
                             <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
                           )}
@@ -503,18 +515,25 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                           <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
                             {cit.position}.
                           </span>
-                          <a
-                            href={cit.cited_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              color: cit.is_target ? 'var(--success)' : 'var(--primary)',
-                              wordBreak: 'break-all',
-                              fontWeight: cit.is_target ? 600 : 400,
-                            }}
-                          >
-                            {cit.cited_url}
-                          </a>
+                          <div style={{ minWidth: 0 }}>
+                            <a
+                              href={cit.cited_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                color: cit.is_target ? 'var(--success)' : 'var(--primary)',
+                                wordBreak: 'break-all',
+                                fontWeight: cit.is_target ? 600 : 400,
+                              }}
+                            >
+                              {cit.cited_title || cit.cited_url}
+                            </a>
+                            {cit.cited_title && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
+                                {cit.cited_url}
+                              </div>
+                            )}
+                          </div>
                           {cit.is_target && (
                             <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
                           )}
