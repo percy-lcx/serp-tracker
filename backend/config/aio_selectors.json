@@ -28,6 +28,22 @@
     ".kp-hc a[href]",
     ".ruTcId a[href]"
   ],
+  "aio_expand_button_selectors": [
+    "div[jsname='WbKHeb']",
+    "div[data-abe]",
+    "[aria-label='Show more']",
+    "[aria-expanded='false']",
+    "g-more-link a",
+    ".cUnQKe a",
+    ".rQUFld"
+  ],
+  "aio_show_all_button_selectors": [
+    "[aria-label='Show all']",
+    "div[jsname='LFoJyb']",
+    "g-more-link a",
+    ".cUnQKe a",
+    ".rQUFld"
+  ],
   "aio_content_selectors": [
     ".aiO-section",
     ".XbbXmb",
