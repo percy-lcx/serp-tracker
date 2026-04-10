@@ -254,6 +254,11 @@ function Dashboard() {
                   <td>
                     <div>
                       {renderPositionChange(job)}
+                      {job.latest_result_title && (
+                        <div style={{ fontSize: 11, color: 'var(--text)', wordBreak: 'break-all', maxWidth: 220, lineHeight: 1.3, marginTop: 2 }}>
+                          {job.latest_result_title}
+                        </div>
+                      )}
                       {job.latest_result_url && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 220, lineHeight: 1.3, marginTop: 2 }}>
                           {job.latest_result_url}

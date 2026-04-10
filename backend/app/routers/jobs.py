@@ -32,6 +32,7 @@ async def _enrich_job(job: TrackingJob, db: AsyncSession) -> JobResponse:
         latest = recent[0]
         response.latest_position = latest.organic_position
         response.latest_result_url = latest.result_url
+        response.latest_result_title = latest.result_title
         response.latest_aio_present = latest.aio_present
         response.latest_aio_url_cited = latest.aio_url_cited
         response.latest_aio_citation_url = latest.aio_citation_url

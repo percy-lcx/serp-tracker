@@ -33,6 +33,7 @@ class JobResponse(BaseModel):
     previous_position: Optional[int] = None
     position_change: Optional[int] = None
     latest_result_url: Optional[str] = None
+    latest_result_title: Optional[str] = None
     latest_aio_present: Optional[bool] = None
     latest_aio_url_cited: Optional[bool] = Field(default=None, serialization_alias="aio_cited")
     latest_aio_citation_url: Optional[str] = None
