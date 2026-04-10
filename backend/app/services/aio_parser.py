@@ -84,6 +84,75 @@ async def _find_aio_by_text(page: Page) -> Optional[object]:
     return None
 
 
+async def _click_expand_button(page: Page, search_scopes: list, css_selectors: list, button_texts: list) -> Optional[str]:
+    """Try to find and click an expand button using CSS selectors and text matching.
+
+    Searches the provided scopes first, then falls back to a page-level text search
+    with bounding-box proximity to the AIO element.
+
+    Returns the matched selector description, or None if no button was found.
+    """
+    # Phase 1: Search within provided scopes (AIO element, parent, ancestor)
+    for scope_name, scope_el in search_scopes:
+        # Try CSS selectors
+        for selector in css_selectors:
+            try:
+                btn = scope_el.locator(selector).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    await page.wait_for_timeout(1000)
+                    return f"{selector} ({scope_name})"
+            except Exception:
+                continue
+
+        # Try text-based detection
+        for text in button_texts:
+            try:
+                btn = scope_el.get_by_text(text, exact=True).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    await page.wait_for_timeout(1000)
+                    return f"text:'{text}' ({scope_name})"
+            except Exception:
+                continue
+
+    # Phase 2: Page-level text search with proximity to AIO
+    # The button may be a sibling/cousin of the AIO element, outside all scopes
+    aio_box = None
+    if search_scopes:
+        try:
+            aio_box = await search_scopes[0][1].bounding_box()
+        except Exception:
+            pass
+
+    for text in button_texts:
+        try:
+            # get_by_role("button") won't work since these are often divs/links
+            candidates = page.get_by_text(text, exact=True)
+            count = await candidates.count()
+            for i in range(count):
+                btn = candidates.nth(i)
+                if not await btn.is_visible():
+                    continue
+                # If we have a bounding box, verify proximity to AIO
+                if aio_box:
+                    btn_box = await btn.bounding_box()
+                    if btn_box:
+                        # Button should be near the AIO horizontally and below or within it
+                        x_near = abs(btn_box["x"] - aio_box["x"]) < aio_box["width"] + 100
+                        y_near = btn_box["y"] <= aio_box["y"] + aio_box["height"] + 200
+                        y_not_far_above = btn_box["y"] >= aio_box["y"] - 50
+                        if not (x_near and y_near and y_not_far_above):
+                            continue
+                await btn.click()
+                await page.wait_for_timeout(1000)
+                return f"text:'{text}' (page-level)"
+        except Exception:
+            continue
+
+    return None
+
+
 async def _expand_aio(page: Page, aio_element, selectors: dict) -> dict:
     """Click 'Show more' and 'Show all' buttons to fully expand the AIO content and cards.
 
@@ -100,10 +169,7 @@ async def _expand_aio(page: Page, aio_element, selectors: dict) -> dict:
         "show_all_selector": None,
     }
 
-    # --- Step 1: Click "Show more" to expand the AIO text ---
-    show_more_selectors = selectors.get("aio_expand_button_selectors", [])
-
-    # Search within the AIO element first, then broaden to parent/page
+    # Build search scopes from narrowest to broadest
     search_scopes = [("aio_element", aio_element)]
     try:
         parent = aio_element.locator("xpath=./parent::div").first
@@ -118,73 +184,27 @@ async def _expand_aio(page: Page, aio_element, selectors: dict) -> dict:
     except Exception:
         pass
 
-    for scope_name, scope_el in search_scopes:
-        if expand_debug["show_more_clicked"]:
-            break
-        # Try CSS selectors from config
-        for selector in show_more_selectors:
-            try:
-                btn = scope_el.locator(selector).first
-                if await btn.count() > 0 and await btn.is_visible():
-                    await btn.click()
-                    await page.wait_for_timeout(800)
-                    expand_debug["show_more_clicked"] = True
-                    expand_debug["show_more_selector"] = f"{selector} ({scope_name})"
-                    logger.info("AIO 'Show more' clicked via %s (%s)", selector, scope_name)
-                    break
-            except Exception as e:
-                logger.debug("Show more selector %s failed in %s: %s", selector, scope_name, e)
-                continue
+    # --- Click "Show more" to expand the AIO text ---
+    show_more_result = await _click_expand_button(
+        page, search_scopes,
+        css_selectors=selectors.get("aio_expand_button_selectors", []),
+        button_texts=["Show more", "Show More"],
+    )
+    if show_more_result:
+        expand_debug["show_more_clicked"] = True
+        expand_debug["show_more_selector"] = show_more_result
+        logger.info("AIO 'Show more' clicked via %s", show_more_result)
 
-        # Also try text-based detection for "Show more"
-        if not expand_debug["show_more_clicked"]:
-            for text in ["Show more", "Show More"]:
-                try:
-                    btn = scope_el.get_by_text(text, exact=True).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
-                        await page.wait_for_timeout(800)
-                        expand_debug["show_more_clicked"] = True
-                        expand_debug["show_more_selector"] = f"text:'{text}' ({scope_name})"
-                        logger.info("AIO 'Show more' clicked via text '%s' (%s)", text, scope_name)
-                        break
-                except Exception:
-                    continue
-
-    # --- Step 2: Click "Show all" to expand the right-side card list ---
-    show_all_selectors = selectors.get("aio_show_all_button_selectors", [])
-
-    for scope_name, scope_el in search_scopes:
-        if expand_debug["show_all_clicked"]:
-            break
-        for selector in show_all_selectors:
-            try:
-                btn = scope_el.locator(selector).first
-                if await btn.count() > 0 and await btn.is_visible():
-                    await btn.click()
-                    await page.wait_for_timeout(800)
-                    expand_debug["show_all_clicked"] = True
-                    expand_debug["show_all_selector"] = f"{selector} ({scope_name})"
-                    logger.info("AIO 'Show all' clicked via %s (%s)", selector, scope_name)
-                    break
-            except Exception as e:
-                logger.debug("Show all selector %s failed in %s: %s", selector, scope_name, e)
-                continue
-
-        # Text-based detection for "Show all"
-        if not expand_debug["show_all_clicked"]:
-            for text in ["Show all", "Show All"]:
-                try:
-                    btn = scope_el.get_by_text(text, exact=True).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
-                        await page.wait_for_timeout(800)
-                        expand_debug["show_all_clicked"] = True
-                        expand_debug["show_all_selector"] = f"text:'{text}' ({scope_name})"
-                        logger.info("AIO 'Show all' clicked via text '%s' (%s)", text, scope_name)
-                        break
-                except Exception:
-                    continue
+    # --- Click "Show all" to expand the right-side card list ---
+    show_all_result = await _click_expand_button(
+        page, search_scopes,
+        css_selectors=selectors.get("aio_show_all_button_selectors", []),
+        button_texts=["Show all", "Show All"],
+    )
+    if show_all_result:
+        expand_debug["show_all_clicked"] = True
+        expand_debug["show_all_selector"] = show_all_result
+        logger.info("AIO 'Show all' clicked via %s", show_all_result)
 
     return expand_debug
 
@@ -246,16 +266,11 @@ async def _extract_inline_citations(aio_element, page: Page, selectors: dict) ->
         "citation_fallback_used": False,
     }
 
-    # Try specific selectors scoped within the AIO element
+    # Try specific selectors scoped within the AIO element only
     for selector in selectors.get("aio_citation_selectors", []):
         try:
             links = aio_element.locator(selector)
             count = await links.count()
-            scope = "element"
-            if count == 0:
-                links = page.locator(selector)
-                count = await links.count()
-                scope = "page"
             if count > 0:
                 for i in range(count):
                     link = links.nth(i)
@@ -268,7 +283,7 @@ async def _extract_inline_citations(aio_element, page: Page, selectors: dict) ->
                             "type": "inline",
                         })
                 if citations:
-                    debug_info["citation_selector_matched"] = f"{selector} ({scope}-scoped, {count} links)"
+                    debug_info["citation_selector_matched"] = f"{selector} (element-scoped, {count} links)"
                     break
         except Exception:
             continue
