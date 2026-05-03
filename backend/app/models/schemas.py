@@ -1,19 +1,27 @@
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class JobCreate(BaseModel):
-    target_url: str
+    target_url: Optional[str] = None
+    target_domain: Optional[str] = None
     query: str
     gl: str = "us"
     hl: str = "en"
     is_active: bool = True
 
+    @model_validator(mode="after")
+    def _require_one_target(self):
+        if not self.target_url and not self.target_domain:
+            raise ValueError("Either target_url or target_domain is required")
+        return self
+
 
 class JobUpdate(BaseModel):
     target_url: Optional[str] = None
+    target_domain: Optional[str] = None
     query: Optional[str] = None
     gl: Optional[str] = None
     hl: Optional[str] = None
@@ -22,7 +30,8 @@ class JobUpdate(BaseModel):
 
 class JobResponse(BaseModel):
     id: str
-    target_url: str
+    target_url: Optional[str] = None
+    target_domain: Optional[str] = None
     query: str
     gl: str
     hl: str
@@ -60,6 +69,7 @@ class OrganicResultResponse(BaseModel):
     title: Optional[str]
     description: Optional[str]
     is_target: bool
+    is_same_domain: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -70,9 +80,23 @@ class AioCitationResponse(BaseModel):
     cited_url: str
     cited_title: Optional[str]
     is_target: bool
+    is_same_domain: bool = False
     citation_type: str = "inline"
 
     model_config = {"from_attributes": True}
+
+
+class SiteProfileResponse(BaseModel):
+    domain: str
+    include_subdomains: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SiteProfileUpdate(BaseModel):
+    include_subdomains: bool
 
 
 class ResultResponse(BaseModel):

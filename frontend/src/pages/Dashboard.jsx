@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { formatDate as formatDateTime } from '../utils/date';
 
 function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -47,8 +48,7 @@ function Dashboard() {
   });
 
   function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString();
+    return formatDateTime(dateStr) || '—';
   }
 
   function renderPositionChange(job) {

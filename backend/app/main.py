@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import SCREENSHOT_DIR
 from .database import init_db
-from .routers import jobs, runs, results, stats
+from .routers import jobs, profiles, results, runs, stats
 from .services.cleanup import cleanup_old_screenshots
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ app.include_router(jobs.router)
 app.include_router(runs.router)
 app.include_router(results.router)
 app.include_router(stats.router)
+app.include_router(profiles.router)
 
 # Serve frontend static files in production
 frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

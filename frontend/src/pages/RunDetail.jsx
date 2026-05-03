@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { formatDate } from '../utils/date';
 
 function statusBadge(status) {
   const map = {
@@ -13,11 +14,6 @@ function statusBadge(status) {
     error: 'badge-danger',
   };
   return <span className={`badge ${map[status] || 'badge-neutral'}`}>{status}</span>;
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString();
 }
 
 function progressPercent(run) {

@@ -4,6 +4,8 @@ __pycache__/
 .env
 data/screenshots/
 data/*.db
+data/browser_profile/
+.venv/
 node_modules/
 frontend/dist/
 .vite/

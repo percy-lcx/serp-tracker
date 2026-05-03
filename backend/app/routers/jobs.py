@@ -1,6 +1,7 @@
 """Tracking jobs CRUD endpoints."""
 import csv
 import io
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select, func, desc
@@ -8,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.models import TrackingJob, TrackingResult
+from ..models.models import SiteProfile, TrackingJob, TrackingResult
 from ..models.schemas import JobCreate, JobUpdate, JobResponse, ResultResponse
+from ..services.domain_match import registered_domain
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -53,10 +55,28 @@ async def list_jobs(db: AsyncSession = Depends(get_db)):
     return [await _enrich_job(j, db) for j in jobs]
 
 
+async def _ensure_profile_for(db: AsyncSession, *, target_url: Optional[str], target_domain: Optional[str]) -> None:
+    if target_url:
+        domain = registered_domain(target_url)
+    elif target_domain:
+        domain = registered_domain(f"https://{target_domain}/") or target_domain.lower()
+    else:
+        return
+    if not domain:
+        return
+    existing = await db.get(SiteProfile, domain)
+    if existing is None:
+        db.add(SiteProfile(domain=domain, include_subdomains=True))
+
+
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
-    job = TrackingJob(**job_data.model_dump())
+    payload = job_data.model_dump()
+    if payload.get("target_domain"):
+        payload["target_domain"] = payload["target_domain"].lower().strip()
+    job = TrackingJob(**payload)
     db.add(job)
+    await _ensure_profile_for(db, target_url=job.target_url, target_domain=job.target_domain)
     await db.commit()
     await db.refresh(job)
     return await _enrich_job(job, db)
@@ -85,7 +105,8 @@ async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/import", status_code=201)
 async def import_jobs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    """Bulk import jobs from CSV. Expected columns: target_url, query, gl, hl"""
+    """Bulk import jobs from CSV. Columns: query (required), and one of target_url
+    or target_domain. Optional: gl, hl."""
     content = await file.read()
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
@@ -95,17 +116,23 @@ async def import_jobs(file: UploadFile = File(...), db: AsyncSession = Depends(g
     for i, row in enumerate(reader, start=2):
         try:
             target_url = row.get("target_url", "").strip()
+            target_domain = row.get("target_domain", "").strip().lower()
             query = row.get("query", "").strip()
-            if not target_url or not query:
-                errors.append(f"Row {i}: missing target_url or query")
+            if not query:
+                errors.append(f"Row {i}: missing query")
+                continue
+            if not target_url and not target_domain:
+                errors.append(f"Row {i}: missing target_url or target_domain")
                 continue
             job = TrackingJob(
-                target_url=target_url,
+                target_url=target_url or None,
+                target_domain=target_domain or None,
                 query=query,
                 gl=row.get("gl", "us").strip() or "us",
                 hl=row.get("hl", "en").strip() or "en",
             )
             db.add(job)
+            await _ensure_profile_for(db, target_url=job.target_url, target_domain=job.target_domain)
             created += 1
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")

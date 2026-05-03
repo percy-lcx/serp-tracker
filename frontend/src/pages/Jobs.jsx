@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 
-const EMPTY_FORM = { target_url: '', query: '', gl: 'us', hl: 'en' };
+const EMPTY_FORM = { mode: 'url', target_url: '', target_domain: '', query: '', gl: 'us', hl: 'en' };
 
 export default function Jobs() {
   const [jobs, setJobs] = useState([]);
@@ -49,7 +49,9 @@ export default function Jobs() {
   const openEdit = useCallback((job) => {
     setEditingJob(job);
     setForm({
+      mode: job.target_domain && !job.target_url ? 'domain' : 'url',
       target_url: job.target_url || '',
+      target_domain: job.target_domain || '',
       query: job.query || '',
       gl: job.gl || 'us',
       hl: job.hl || 'en',
@@ -72,10 +74,17 @@ export default function Jobs() {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        query: form.query,
+        gl: form.gl,
+        hl: form.hl,
+        target_url: form.mode === 'url' ? form.target_url : null,
+        target_domain: form.mode === 'domain' ? form.target_domain.trim().toLowerCase() : null,
+      };
       if (editingJob) {
-        await api.updateJob(editingJob.id, form);
+        await api.updateJob(editingJob.id, payload);
       } else {
-        await api.createJob(form);
+        await api.createJob(payload);
       }
       closeModal();
       await fetchJobs();
@@ -248,7 +257,7 @@ export default function Jobs() {
                   />
                 </th>
                 <th>Query</th>
-                <th>Target URL</th>
+                <th>Target</th>
                 <th>GL</th>
                 <th>HL</th>
                 <th>Active</th>
@@ -271,7 +280,16 @@ export default function Jobs() {
                     </Link>
                   </td>
                   <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {job.target_url}
+                    {job.target_url ? (
+                      job.target_url
+                    ) : job.target_domain ? (
+                      <span>
+                        <span className="badge badge-info" style={{ fontSize: 10, marginRight: 6 }}>domain</span>
+                        {job.target_domain}
+                      </span>
+                    ) : (
+                      <span className="text-muted">-</span>
+                    )}
                   </td>
                   <td>{job.gl}</td>
                   <td>{job.hl}</td>
@@ -311,17 +329,61 @@ export default function Jobs() {
             <h2>{editingJob ? 'Edit Job' : 'Add Job'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label htmlFor="job-target-url">Target URL</label>
-                <input
-                  id="job-target-url"
-                  name="target_url"
-                  type="url"
-                  required
-                  placeholder="https://example.com/page"
-                  value={form.target_url}
-                  onChange={handleChange}
-                />
+                <label>Track</label>
+                <div className="flex gap-4" style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+                    <input
+                      type="radio"
+                      name="mode"
+                      value="url"
+                      checked={form.mode === 'url'}
+                      onChange={handleChange}
+                    />
+                    Specific URL
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+                    <input
+                      type="radio"
+                      name="mode"
+                      value="domain"
+                      checked={form.mode === 'domain'}
+                      onChange={handleChange}
+                    />
+                    Domain only
+                  </label>
+                </div>
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 8 }}>
+                  Domain-only mode tracks any page on the domain (and subdomains, per profile)
+                  without checking for an exact URL match.
+                </p>
               </div>
+              {form.mode === 'url' ? (
+                <div className="form-group">
+                  <label htmlFor="job-target-url">Target URL</label>
+                  <input
+                    id="job-target-url"
+                    name="target_url"
+                    type="url"
+                    required
+                    placeholder="https://example.com/page"
+                    value={form.target_url}
+                    onChange={handleChange}
+                  />
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label htmlFor="job-target-domain">Target Domain</label>
+                  <input
+                    id="job-target-domain"
+                    name="target_domain"
+                    type="text"
+                    required
+                    placeholder="example.com"
+                    value={form.target_domain}
+                    onChange={handleChange}
+                  />
+                </div>
+              )}
               <div className="form-group">
                 <label htmlFor="job-query">Query</label>
                 <input

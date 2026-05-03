@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { formatDate, formatShortDate } from '../utils/date';
 import {
   LineChart,
   Line,
@@ -10,17 +11,6 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString();
-}
-
-function formatShortDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
 
 function statusBadge(status) {
   const map = {
@@ -94,7 +84,9 @@ export default function JobDetail() {
   const yMin = Math.max(1, minPos - 1);
   const yMax = maxPos + 2;
 
-  // AIO timeline data
+  const isDomainOnly = !!(job && !job.target_url && job.target_domain);
+
+  // AIO timeline data — for domain-only jobs, "cited" means any same-domain citation hit.
   const aioTimeline = results
     .sort((a, b) => new Date(a.created_at || a.checked_at || 0) - new Date(b.created_at || b.checked_at || 0))
     .map((r) => ({
@@ -102,7 +94,9 @@ export default function JobDetail() {
       date: formatShortDate(r.created_at || r.checked_at),
       fullDate: formatDate(r.created_at || r.checked_at),
       aioPresent: r.aio_present,
-      aioCited: r.aio_cited,
+      aioCited: isDomainOnly
+        ? (r.aio_citations || []).some((c) => c.is_same_domain)
+        : r.aio_cited,
     }));
 
   return (
@@ -121,8 +115,17 @@ export default function JobDetail() {
             <div style={{ marginTop: 4, fontWeight: 600, fontSize: 16 }}>{job.query}</div>
           </div>
           <div style={{ minWidth: 200 }}>
-            <span className="text-sm text-muted">Target URL</span>
-            <div style={{ marginTop: 4, wordBreak: 'break-all' }}>{job.target_url || job.url || '-'}</div>
+            <span className="text-sm text-muted">{isDomainOnly ? 'Target Domain' : 'Target URL'}</span>
+            <div style={{ marginTop: 4, wordBreak: 'break-all' }}>
+              {isDomainOnly ? (
+                <span>
+                  <span className="badge badge-info" style={{ fontSize: 10, marginRight: 6 }}>domain</span>
+                  {job.target_domain}
+                </span>
+              ) : (
+                job.target_url || job.url || '-'
+              )}
+            </div>
           </div>
           <div>
             <span className="text-sm text-muted">GL (Country)</span>
@@ -141,8 +144,8 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {/* Position Trend Chart */}
-      {chartData.length > 1 && (
+      {/* Position Trend Chart — exact-URL only */}
+      {!isDomainOnly && chartData.length > 1 && (
         <div className="chart-container">
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Position Trend</h2>
           <ResponsiveContainer width="100%" height={300}>
@@ -185,10 +188,10 @@ export default function JobDetail() {
               let title = `${entry.fullDate}: AIO not present`;
               if (entry.aioPresent && entry.aioCited) {
                 bgColor = 'var(--success)';
-                title = `${entry.fullDate}: AIO present, target cited`;
+                title = `${entry.fullDate}: AIO present, ${isDomainOnly ? 'your domain cited' : 'target cited'}`;
               } else if (entry.aioPresent) {
                 bgColor = 'var(--warning)';
-                title = `${entry.fullDate}: AIO present, target NOT cited`;
+                title = `${entry.fullDate}: AIO present, ${isDomainOnly ? 'your domain NOT cited' : 'target NOT cited'}`;
               }
               return (
                 <div
@@ -214,11 +217,11 @@ export default function JobDetail() {
           <div className="flex gap-4 mt-4" style={{ fontSize: 12 }}>
             <div className="flex items-center gap-2">
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--success)' }} />
-              AIO Present + Cited
+              AIO Present + {isDomainOnly ? 'Your Domain Cited' : 'Cited'}
             </div>
             <div className="flex items-center gap-2">
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning)' }} />
-              AIO Present, Not Cited
+              AIO Present, {isDomainOnly ? 'Your Domain Not Cited' : 'Not Cited'}
             </div>
             <div className="flex items-center gap-2">
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--border)' }} />
@@ -240,9 +243,9 @@ export default function JobDetail() {
               <tr>
                 <th style={{ width: 30 }} />
                 <th>Date</th>
-                <th>Position</th>
+                {!isDomainOnly && <th>Position</th>}
                 <th>AIO Present</th>
-                <th>AIO Cited</th>
+                <th>{isDomainOnly ? 'Same-Domain Hits' : 'AIO Cited'}</th>
                 <th>Status</th>
                 <th>Screenshots</th>
               </tr>
@@ -261,6 +264,7 @@ export default function JobDetail() {
                       rowId={rowId}
                       isExpanded={isExpanded}
                       hasError={hasError}
+                      isDomainOnly={isDomainOnly}
                       onToggle={toggleRow}
                       onScreenshotClick={openLightbox}
                     />
@@ -281,10 +285,68 @@ export default function JobDetail() {
   );
 }
 
-function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshotClick }) {
+function SameDomainSummary({ result }) {
+  const aioHits = (result.aio_citations || []).filter((c) => c.is_same_domain && !c.is_target);
+  const orgHits = (result.organic_results || []).filter((o) => o.is_same_domain && !o.is_target);
+  if (aioHits.length === 0 && orgHits.length === 0) return null;
+  const sortedOrg = [...orgHits].sort((a, b) => a.position - b.position);
+  const sortedAio = [...aioHits].sort((a, b) => a.position - b.position);
+  return (
+    <div style={{ flexBasis: '100%' }}>
+      <span className="text-sm text-muted">Also seen on your domain</span>
+      <div
+        style={{
+          marginTop: 4,
+          padding: '8px 10px',
+          background: 'rgba(59,130,246,0.06)',
+          border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 6,
+          fontSize: 12,
+          lineHeight: 1.5,
+        }}
+      >
+        {sortedAio.length > 0 && (
+          <div style={{ marginBottom: sortedOrg.length > 0 ? 6 : 0 }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>AIO citation{sortedAio.length > 1 ? 's' : ''}: </span>
+            {sortedAio.map((c, i) => (
+              <span key={c.id}>
+                {i > 0 && ', '}
+                <a href={c.cited_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', wordBreak: 'break-all' }}>
+                  {c.cited_url}
+                </a>
+                <span className="text-muted"> (#{c.position})</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {sortedOrg.length > 0 && (
+          <div>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Organic: </span>
+            {sortedOrg.map((o, i) => (
+              <span key={o.id}>
+                {i > 0 && ', '}
+                <span className="text-muted">#{o.position} </span>
+                <a href={o.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', wordBreak: 'break-all' }}>
+                  {o.url}
+                </a>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResultRow({ result, rowId, isExpanded, hasError, isDomainOnly, onToggle, onScreenshotClick }) {
   const page1ScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page1') : null;
   const page2ScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'page2') : null;
   const aioScreenshotUrl = result.id ? api.getScreenshotUrl(result.id, 'aio') : null;
+  const sameDomainAio = (result.aio_citations || []).filter((c) => c.is_same_domain).length;
+  const sameDomainOrg = (result.organic_results || []).filter((o) => o.is_same_domain).length;
+  const sameDomainTotal = sameDomainAio + sameDomainOrg;
+  const aioCitedDisplay = isDomainOnly ? sameDomainAio > 0 : result.aio_cited;
+  const colSpan = isDomainOnly ? 6 : 7;
 
   return (
     <>
@@ -296,25 +358,27 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
           {isExpanded ? '\u25BC' : '\u25B6'}
         </td>
         <td>{formatDate(result.created_at || result.checked_at)}</td>
-        <td>
-          {result.position != null ? (
-            <div>
-              <span style={{ fontWeight: 600 }}>{result.position}</span>
-              {result.result_title && (
-                <div style={{ fontSize: 11, color: 'var(--text)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
-                  {result.result_title}
-                </div>
-              )}
-              {result.result_url && (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
-                  {result.result_url}
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className="text-muted">-</span>
-          )}
-        </td>
+        {!isDomainOnly && (
+          <td>
+            {result.position != null ? (
+              <div>
+                <span style={{ fontWeight: 600 }}>{result.position}</span>
+                {result.result_title && (
+                  <div style={{ fontSize: 11, color: 'var(--text)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
+                    {result.result_title}
+                  </div>
+                )}
+                {result.result_url && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', maxWidth: 250, lineHeight: 1.3, marginTop: 2 }}>
+                    {result.result_url}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-muted">-</span>
+            )}
+          </td>
+        )}
         <td>
           {result.aio_present != null ? (
             <span className={`badge ${result.aio_present ? 'badge-info' : 'badge-neutral'}`}>
@@ -325,9 +389,17 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
           )}
         </td>
         <td>
-          {result.aio_cited != null ? (
-            <span className={`badge ${result.aio_cited ? 'badge-success' : 'badge-neutral'}`}>
-              {result.aio_cited ? 'Yes' : 'No'}
+          {isDomainOnly ? (
+            sameDomainTotal > 0 ? (
+              <span className="badge badge-info" title={`${sameDomainAio} AIO + ${sameDomainOrg} organic`}>
+                {sameDomainTotal}
+              </span>
+            ) : (
+              <span className="text-muted">-</span>
+            )
+          ) : aioCitedDisplay != null ? (
+            <span className={`badge ${aioCitedDisplay ? 'badge-success' : 'badge-neutral'}`}>
+              {aioCitedDisplay ? 'Yes' : 'No'}
             </span>
           ) : (
             <span className="text-muted">-</span>
@@ -396,7 +468,7 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={7} style={{ background: '#f8fafc', padding: 16 }}>
+          <td colSpan={colSpan} style={{ background: '#f8fafc', padding: 16 }}>
             <div className="flex flex-wrap gap-4">
               <div>
                 <span className="text-sm text-muted">Run ID</span>
@@ -408,19 +480,23 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                   ) : '-'}
                 </div>
               </div>
-              <div>
-                <span className="text-sm text-muted">Position</span>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>{result.position ?? '-'}</div>
-              </div>
+              {!isDomainOnly && (
+                <div>
+                  <span className="text-sm text-muted">Position</span>
+                  <div style={{ marginTop: 2, fontWeight: 600 }}>{result.position ?? '-'}</div>
+                </div>
+              )}
               <div>
                 <span className="text-sm text-muted">AIO Present</span>
                 <div style={{ marginTop: 2 }}>{result.aio_present != null ? (result.aio_present ? 'Yes' : 'No') : '-'}</div>
               </div>
-              <div>
-                <span className="text-sm text-muted">AIO Cited</span>
-                <div style={{ marginTop: 2 }}>{result.aio_cited != null ? (result.aio_cited ? 'Yes' : 'No') : '-'}</div>
-              </div>
-              {result.aio_position != null && (
+              {!isDomainOnly && (
+                <div>
+                  <span className="text-sm text-muted">AIO Cited</span>
+                  <div style={{ marginTop: 2 }}>{result.aio_cited != null ? (result.aio_cited ? 'Yes' : 'No') : '-'}</div>
+                </div>
+              )}
+              {!isDomainOnly && result.aio_position != null && (
                 <div>
                   <span className="text-sm text-muted">AIO Position</span>
                   <div style={{ marginTop: 2 }}>{result.aio_position}</div>
@@ -444,52 +520,63 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                   </div>
                 </div>
               )}
+              <SameDomainSummary result={result} />
               {result.organic_results && result.organic_results.length > 0 && (
                 <div style={{ flexBasis: '100%' }}>
                   <span className="text-sm text-muted">Organic Results ({result.organic_results.length})</span>
                   <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6 }}>
                     {result.organic_results
                       .sort((a, b) => a.position - b.position)
-                      .map((org) => (
-                        <div
-                          key={org.id}
-                          style={{
-                            display: 'flex',
-                            gap: 8,
-                            alignItems: 'baseline',
-                            padding: '2px 0',
-                            background: org.is_target ? 'rgba(34,197,94,0.1)' : 'transparent',
-                            borderRadius: 4,
-                            paddingLeft: 4,
-                          }}
-                        >
-                          <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
-                            {org.position}.
-                          </span>
-                          <div style={{ minWidth: 0 }}>
-                            <a
-                              href={org.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                color: org.is_target ? 'var(--success)' : 'var(--primary)',
-                                wordBreak: 'break-all',
-                                fontWeight: org.is_target ? 600 : 400,
-                              }}
-                            >
-                              {org.title || org.url}
-                            </a>
-                            {org.title && (
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
-                                {org.url}
-                              </div>
+                      .map((org) => {
+                        const sameDomainOnly = org.is_same_domain && !org.is_target;
+                        return (
+                          <div
+                            key={org.id}
+                            style={{
+                              display: 'flex',
+                              gap: 8,
+                              alignItems: 'baseline',
+                              padding: '2px 0',
+                              background: org.is_target
+                                ? 'rgba(34,197,94,0.1)'
+                                : sameDomainOnly
+                                ? 'rgba(59,130,246,0.08)'
+                                : 'transparent',
+                              borderRadius: 4,
+                              paddingLeft: 4,
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
+                              {org.position}.
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <a
+                                href={org.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: org.is_target ? 'var(--success)' : 'var(--primary)',
+                                  wordBreak: 'break-all',
+                                  fontWeight: org.is_target ? 600 : 400,
+                                }}
+                              >
+                                {org.title || org.url}
+                              </a>
+                              {org.title && (
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
+                                  {org.url}
+                                </div>
+                              )}
+                            </div>
+                            {org.is_target && (
+                              <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
+                            )}
+                            {sameDomainOnly && (
+                              <span className="badge badge-info" style={{ fontSize: 10 }}>same domain</span>
                             )}
                           </div>
-                          {org.is_target && (
-                            <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               )}
@@ -499,51 +586,61 @@ function ResultRow({ result, rowId, isExpanded, hasError, onToggle, onScreenshot
                   <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6 }}>
                     {result.aio_citations
                       .sort((a, b) => a.position - b.position)
-                      .map((cit) => (
-                        <div
-                          key={cit.id}
-                          style={{
-                            display: 'flex',
-                            gap: 8,
-                            alignItems: 'baseline',
-                            padding: '2px 0',
-                            background: cit.is_target ? 'rgba(34,197,94,0.1)' : 'transparent',
-                            borderRadius: 4,
-                            paddingLeft: 4,
-                          }}
-                        >
-                          <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
-                            {cit.position}.
-                          </span>
-                          <div style={{ minWidth: 0 }}>
-                            <a
-                              href={cit.cited_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                color: cit.is_target ? 'var(--success)' : 'var(--primary)',
-                                wordBreak: 'break-all',
-                                fontWeight: cit.is_target ? 600 : 400,
-                              }}
-                            >
-                              {cit.cited_title || cit.cited_url}
-                            </a>
-                            {cit.cited_title && (
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
-                                {cit.cited_url}
-                              </div>
+                      .map((cit) => {
+                        const sameDomainOnly = cit.is_same_domain && !cit.is_target;
+                        return (
+                          <div
+                            key={cit.id}
+                            style={{
+                              display: 'flex',
+                              gap: 8,
+                              alignItems: 'baseline',
+                              padding: '2px 0',
+                              background: cit.is_target
+                                ? 'rgba(34,197,94,0.1)'
+                                : sameDomainOnly
+                                ? 'rgba(59,130,246,0.08)'
+                                : 'transparent',
+                              borderRadius: 4,
+                              paddingLeft: 4,
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, minWidth: 24, color: 'var(--text-muted)' }}>
+                              {cit.position}.
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <a
+                                href={cit.cited_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: cit.is_target ? 'var(--success)' : 'var(--primary)',
+                                  wordBreak: 'break-all',
+                                  fontWeight: cit.is_target ? 600 : 400,
+                                }}
+                              >
+                                {cit.cited_title || cit.cited_url}
+                              </a>
+                              {cit.cited_title && (
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', lineHeight: 1.3, marginTop: 1 }}>
+                                  {cit.cited_url}
+                                </div>
+                              )}
+                            </div>
+                            {cit.is_target && (
+                              <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
+                            )}
+                            {sameDomainOnly && (
+                              <span className="badge badge-info" style={{ fontSize: 10 }}>same domain</span>
+                            )}
+                            {cit.citation_type && cit.citation_type !== 'inline' && (
+                              <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.15)', color: 'var(--primary)' }}>
+                                {cit.citation_type}
+                              </span>
                             )}
                           </div>
-                          {cit.is_target && (
-                            <span className="badge badge-success" style={{ fontSize: 10 }}>target</span>
-                          )}
-                          {cit.citation_type && cit.citation_type !== 'inline' && (
-                            <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.15)', color: 'var(--primary)' }}>
-                              {cit.citation_type}
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               )}

@@ -43,4 +43,8 @@ export const api = {
 
   // Stats
   getStats: () => request('GET', '/api/stats'),
+
+  // Site profiles
+  getProfiles: () => request('GET', '/api/profiles'),
+  updateProfile: (domain, data) => request('PUT', `/api/profiles/${encodeURIComponent(domain)}`, data),
 };

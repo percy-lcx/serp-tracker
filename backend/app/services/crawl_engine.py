@@ -22,6 +22,7 @@ from ..config import (
 from ..database import async_session
 from ..models.models import AioCitation, OrganicResult, TrackingJob, TrackingResult, TrackingRun
 from .aio_parser import detect_aio, match_citations_to_target, normalize_url
+from .domain_match import get_or_create_profile, is_same_site, registered_domain
 from .serp_parser import parse_organic_results
 
 logger = logging.getLogger(__name__)
@@ -258,6 +259,24 @@ async def _crawl_single_job(
         debug_lines.append(msg)
         await manager.broadcast(run.id, {"type": "debug_log", "job_id": job.id, "message": msg})
 
+    # Resolve site profile up front so every record gets stamped consistently.
+    # Domain-only jobs supply target_domain directly; URL jobs derive it.
+    if job.target_url:
+        target_domain = registered_domain(job.target_url)
+        # Synthetic URL when only a domain is needed for the host comparison path.
+        target_for_match = job.target_url
+    else:
+        target_domain = (job.target_domain or "").lower()
+        target_for_match = f"https://{target_domain}/" if target_domain else ""
+
+    profile = await get_or_create_profile(db, target_domain) if target_domain else None
+    include_subdomains = profile.include_subdomains if profile else True
+
+    def _same_site(candidate: str) -> bool:
+        if not target_for_match:
+            return False
+        return is_same_site(candidate, target_for_match, include_subdomains)
+
     try:
         page = browser_mgr.page
 
@@ -345,29 +364,34 @@ async def _crawl_single_job(
                     await _debug(f"AIO screenshot fallback also failed: {e2}")
                     logger.warning("Failed to screenshot AIO: %s", e2)
 
-            # Process citations
-            is_cited, citation_pos = match_citations_to_target(
-                aio_data["citations"], job.target_url
-            )
-            result.aio_url_cited = is_cited
-            result.aio_citation_position = citation_pos
-            if is_cited and citation_pos is not None:
-                # Store the actual cited URL for debugging
-                target_norm = normalize_url(job.target_url)
-                for cit in aio_data["citations"]:
-                    if normalize_url(cit["url"]) == target_norm:
-                        result.aio_citation_url = cit["url"]
-                        break
-            await _debug(f"AIO target match: cited={is_cited}, citation_position={citation_pos}, url={result.aio_citation_url}")
+            # Process citations — exact-URL match only runs when a URL is set.
+            if job.target_url:
+                is_cited, citation_pos = match_citations_to_target(
+                    aio_data["citations"], job.target_url
+                )
+                result.aio_url_cited = is_cited
+                result.aio_citation_position = citation_pos
+                if is_cited and citation_pos is not None:
+                    target_norm = normalize_url(job.target_url)
+                    for cit in aio_data["citations"]:
+                        if normalize_url(cit["url"]) == target_norm:
+                            result.aio_citation_url = cit["url"]
+                            break
+                await _debug(f"AIO target match: cited={is_cited}, citation_position={citation_pos}, url={result.aio_citation_url}")
+            else:
+                await _debug("Domain-only job: skipping AIO exact-URL match")
 
             # Save citation records
+            target_url_norm = normalize_url(job.target_url) if job.target_url else None
             for i, cit in enumerate(aio_data["citations"]):
                 aio_cit = AioCitation(
                     result_id=result.id,
                     position=i + 1,
                     cited_url=cit["url"],
                     cited_title=cit.get("title"),
-                    is_target=normalize_url(cit["url"]) == normalize_url(job.target_url),
+                    is_target=(target_url_norm is not None
+                               and normalize_url(cit["url"]) == target_url_norm),
+                    is_same_domain=_same_site(cit["url"]),
                     citation_type=cit.get("type", "inline"),
                 )
                 result.aio_citations.append(aio_cit)
@@ -417,10 +441,13 @@ async def _crawl_single_job(
         all_results = page1_results + page2_results
         result.total_organic_results = len(all_results)
 
-        target_normalized = normalize_url(job.target_url)
+        target_normalized = normalize_url(job.target_url) if job.target_url else None
         found = False
         for r in all_results:
-            is_target = normalize_url(r["url"]) == target_normalized
+            is_target = (
+                target_normalized is not None
+                and normalize_url(r["url"]) == target_normalized
+            )
             if is_target and not found:
                 result.organic_position = r["position"]
                 result.organic_page = 1 if r["position"] <= 10 else 2
@@ -436,13 +463,18 @@ async def _crawl_single_job(
                 title=r.get("title"),
                 description=r.get("description"),
                 is_target=is_target,
+                is_same_domain=_same_site(r["url"]),
             )
             result.organic_results.append(organic_rec)
 
-        if found:
-            await _debug(f"Target found: position={result.organic_position}, page={result.organic_page}")
+        if job.target_url:
+            if found:
+                await _debug(f"Target found: position={result.organic_position}, page={result.organic_page}")
+            else:
+                await _debug(f"Target URL not found in {len(all_results)} results (target: {job.target_url})")
         else:
-            await _debug(f"Target URL not found in {len(all_results)} results (target: {job.target_url})")
+            same_domain_count = sum(1 for o in result.organic_results if o.is_same_domain)
+            await _debug(f"Domain-only job: {same_domain_count} same-domain organic hit(s) in top {len(all_results)}")
         await _debug(f"Saved {len(result.organic_results)} organic result URLs")
 
     except Exception as e:

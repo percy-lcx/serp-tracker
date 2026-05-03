@@ -22,7 +22,8 @@ class TrackingJob(Base):
     __tablename__ = "tracking_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    target_url: Mapped[str] = mapped_column(Text, nullable=False)
+    target_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    target_domain: Mapped[Optional[str]] = mapped_column(String(253), nullable=True)
     query: Mapped[str] = mapped_column(Text, nullable=False)
     gl: Mapped[str] = mapped_column(String(10), nullable=False, default="us")
     hl: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
@@ -87,6 +88,7 @@ class OrganicResult(Base):
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_target: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_same_domain: Mapped[bool] = mapped_column(Boolean, default=False)
 
     result: Mapped[TrackingResult] = relationship(back_populates="organic_results")
 
@@ -100,6 +102,16 @@ class AioCitation(Base):
     cited_url: Mapped[str] = mapped_column(Text, nullable=False)
     cited_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_target: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_same_domain: Mapped[bool] = mapped_column(Boolean, default=False)
     citation_type: Mapped[str] = mapped_column(String(20), default="inline")
 
     result: Mapped[TrackingResult] = relationship(back_populates="aio_citations")
+
+
+class SiteProfile(Base):
+    __tablename__ = "site_profiles"
+
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    include_subdomains: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

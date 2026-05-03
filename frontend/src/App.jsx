@@ -4,6 +4,7 @@ import Jobs from './pages/Jobs';
 import RunControl from './pages/RunControl';
 import RunDetail from './pages/RunDetail';
 import JobDetail from './pages/JobDetail';
+import Settings from './pages/Settings';
 import './App.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/jobs">Jobs</NavLink>
           <NavLink to="/run">Run Control</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
         <main className="content">
           <Routes>
@@ -23,6 +25,7 @@ function App() {
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/run" element={<RunControl />} />
             <Route path="/history/:id" element={<RunDetail />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
       </div>
